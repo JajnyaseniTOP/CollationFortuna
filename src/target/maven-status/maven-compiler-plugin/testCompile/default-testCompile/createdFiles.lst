@@ -1,0 +1,14 @@
+StepDefinition\XeroPractiseManagerSteps.class
+TestRunners\TestRunner.class
+StepDefinition\SaveEmailDraftGraphAPISteps.class
+StepDefinition\XeroLoginSteps.class
+StepDefinition\ATOSelectingDateSteps.class
+StepDefinition\SearchClientSteps.class
+StepDefinition\XeroSecurityQuestSteps.class
+StepDefinition\XeroTaxReturnSteps.class
+StepDefinition\ATOClickLinkSteps.class
+StepDefinition\XeroSearchClientSteps.class
+StepDefinition\ATOCommSteps.class
+StepDefinition\ATOLoginStep$1.class
+StepDefinition\ATOLoginStep.class
+MyHooks\AppHooks.class

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testng-results ignored="0" total="4" passed="4" failed="0" skipped="0">
+  <reporter-output>
+  </reporter-output>
+  <suite started-at="2024-03-08T09:50:32 IST" name="Default suite" finished-at="2024-03-08T09:50:50 IST" duration-ms="18035">
+    <groups>
+    </groups>
+    <test started-at="2024-03-08T09:50:32 IST" name="Default test" finished-at="2024-03-08T09:50:50 IST" duration-ms="18035">
+      <class name="TestCases.LoginPageTestCase">
+        <test-method is-config="true" signature="setupDriver()[pri:0, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:32 IST" name="setupDriver" finished-at="2024-03-08T09:50:34 IST" duration-ms="2031" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- setupDriver -->
+        <test-method signature="launchSite()[pri:1, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:34 IST" name="launchSite" finished-at="2024-03-08T09:50:42 IST" duration-ms="7960" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- launchSite -->
+        <test-method signature="doClickMyGOVButton()[pri:2, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:42 IST" name="doClickMyGOVButton" finished-at="2024-03-08T09:50:49 IST" duration-ms="7013" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- doClickMyGOVButton -->
+        <test-method signature="doEnterEmailAddress()[pri:3, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:49 IST" name="doEnterEmailAddress" finished-at="2024-03-08T09:50:49 IST" duration-ms="672" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- doEnterEmailAddress -->
+        <test-method signature="doClickLoginButton()[pri:4, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:49 IST" name="doClickLoginButton" finished-at="2024-03-08T09:50:49 IST" duration-ms="71" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- doClickLoginButton -->
+        <test-method is-config="true" signature="closeTest()[pri:0, instance:TestCases.LoginPageTestCase@4c163e3]" started-at="2024-03-08T09:50:49 IST" name="closeTest" finished-at="2024-03-08T09:50:50 IST" duration-ms="234" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- closeTest -->
+      </class> <!-- TestCases.LoginPageTestCase -->
+    </test> <!-- Default test -->
+  </suite> <!-- Default suite -->
+</testng-results>
