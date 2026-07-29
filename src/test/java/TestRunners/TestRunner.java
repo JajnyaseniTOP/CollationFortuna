@@ -25,8 +25,7 @@ import io.cucumber.junit.CucumberOptions;
 	plugin = {"pretty"}
 		)
 
-public class TestRunner {
-	//Leca, Christopher
+public class TestRunner {	
 	public static void main(String[] args) {
         Main.main(args);
     }
