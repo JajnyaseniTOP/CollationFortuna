@@ -10,6 +10,7 @@ import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.PageFactory;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import com.google.common.collect.Table.Cell;
 import com.jj.util.ClientExcel;
 import com.jj.util.MainClass;
 
@@ -101,9 +102,9 @@ public class FindJob extends MainClass {
 			System.out.println("Scroll failed, continuing anyway: " + e.getMessage());
 		}
 
-		extractedJobNo   = extractText(jobNo, "Job No.");
-		coverLetterNotes = extractText(Cover_Letter_Notes, "Cover Letter Notes");
-		clientName       = extractText(Client_Name, "Client Name");
+		extractedJobNo   = extractText(jobNo, "Job No.","No Job");
+		coverLetterNotes = extractText(Cover_Letter_Notes, "Cover Letter Notes","No cover letter");
+		clientName       = extractText(Client_Name, "Client Name","No cleintName");
 
 		System.out.println(">>> EXITED extractClientDetailsInJobPage()");
 	}
@@ -122,9 +123,9 @@ public class FindJob extends MainClass {
 			System.out.println("Scroll failed, continuing anyway: " + e.getMessage());
 		}
 
-		clientnamecode = extractText(client_name_code, "Client Name Code");
-		groupName      = extractText(client_GroupName, "Client Group Name");
-		internalteam   = extractText(internal_team, "Internal Team");
+		clientnamecode = extractText(client_name_code, "Client Name Code", "No Value");
+		groupName      = extractText(client_GroupName, "Group Name", "No GroupName");
+		internalteam   = extractText(internal_team, "Internal Team", "No Value");
 
 		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode, groupName, internalteam);
 	}
@@ -141,20 +142,24 @@ public class FindJob extends MainClass {
 		internalteam   = "No Value";
 
 		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode, groupName, internalteam);
+		
 	}
+	
+
+
 
 	/*====================Helper: extract text with fallback to "No Value"===================================*/
-	private static String extractText(WebElement element, String fieldLabelForLog) {
+	private static String extractText(WebElement element,String fieldLabelForLog,String defaultValue) {
 		try {
 			String value = element.getText().trim();
 			if (value.isEmpty()) {
-				System.out.println(fieldLabelForLog + " was empty — defaulting to 'No Value'");
-				return "No Value";
+				System.out.println(fieldLabelForLog + " was empty — defaulting to '" + defaultValue + "'");
+				return defaultValue;
 			}
 			return value;
 		} catch (Exception e) {
 			System.out.println("Unable to extract " + fieldLabelForLog + ": " + e.getMessage());
-			return "No Value";
+			return defaultValue;
 		}
 	}
 	
@@ -234,5 +239,9 @@ public class FindJob extends MainClass {
 		} else {
 			extractClientDetail();
 		}
+	}
+	
+	public static void formatClientExcel() {
+		
 	}
 }

@@ -18,6 +18,7 @@ public class FindJobStepDefinition {
     @When("I switch the portal based on the job code")
     public void i_switch_the_portal_based_on_the_job_code() throws InterruptedException {
     	job.switchPortalByPrefix(jobCode);
+    	
     }
 
     @Then("the correct portal should be selected")

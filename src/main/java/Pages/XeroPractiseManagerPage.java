@@ -70,12 +70,14 @@ public class XeroPractiseManagerPage extends MainClass{
 	        // Wait for menu container
 	        WebElement menuContainer = wait.until(
 	            ExpectedConditions.visibilityOfElementLocated(
-	                By.xpath("//div[@aria-label='Organization menu']")
+	                By.xpath("//div[@aria-label='Organisation menu']")
 	            )
 	        );
 
+	        Thread.sleep(3000);
 	        // Scroll main menu
 	        js.executeScript("arguments[0].scrollTop = arguments[0].scrollHeight", menuContainer);
+	        Thread.sleep(3000);
 
 	        // Click Practice Tools
 	        WebElement practiceToolsBtn = wait.until(

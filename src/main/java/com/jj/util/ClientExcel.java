@@ -44,7 +44,7 @@ public class ClientExcel extends MainClass {
 
 		workbook = new HSSFWorkbook();
 		sheet = workbook.createSheet("Client Data");
-		String[] headers = {"Job No", "Cover Letter Notes", "Date","Client Name","Client Name Code","Client Group Name","Internal team Name"};
+		String[] headers = {"Job No", "Cover Letter Notes", "Date","Client Name","Client Name Code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName"};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);
@@ -81,13 +81,33 @@ public class ClientExcel extends MainClass {
 		row.createCell(4).setCellValue(clientNameCode);
 		row.createCell(5).setCellValue(GroupName);
 		row.createCell(6).setCellValue(internalTeam);
-		
+		createCombinedColumns(row); 
 		
 
 		currentRowNum++;
 
 		saveWorkbook(getTargetFile());
 	}
+	
+	
+	/*====================Create Combined Columns for Current Row===================================*/
+	private void createCombinedColumns(Row row) {
+
+	    String clientName   = getCellValue(row.getCell(3));
+	    String clientCode   = getCellValue(row.getCell(4));
+	    String groupName    = getCellValue(row.getCell(5));
+	    String internalTeam = getCellValue(row.getCell(6));
+
+	    row.createCell(7).setCellValue(groupName + " - " + internalTeam);
+	    row.createCell(8).setCellValue(clientCode + " - " + internalTeam);
+	    row.createCell(9).setCellValue(clientName + " - " + internalTeam);
+	}
+
+	private String getCellValue(Cell cell) {
+	    return (cell == null) ? "" : cell.toString().trim();
+	}
+	
+	
 
 	/*====================Save Workbook to disk===================================*/
 	private void saveWorkbook(File file) {

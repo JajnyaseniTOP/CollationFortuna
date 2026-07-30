@@ -14,4 +14,5 @@ Feature: Switch Portal based on Job Code
       | jobCode     |
       | KPF018988   |
       | J010726     |
+      | KPF019282     |
      

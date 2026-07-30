@@ -249,11 +249,7 @@ public class DriverManager {
     // ─────────────────────────────────────────────────────────────────────────
  
     public static void setDriver(String browser) {
- 
-        String workspacePath = "K:" + File.separator + "ATO Email files Keypoint";
-        new File(workspacePath).mkdirs();
- 
-        if ("Chrome".equalsIgnoreCase(browser)) {
+    if ("Chrome".equalsIgnoreCase(browser)) {
  
             // ── Download & patch ChromeDriver binary ──────────────────────
             try {
@@ -266,7 +262,7 @@ public class DriverManager {
  
             // ── Chrome preferences ────────────────────────────────────────
             Map<String, Object> prefs = new HashMap<>();
-            prefs.put("download.default_directory", workspacePath);
+          
             prefs.put("profile.default_content_setting_values.notifications", 2);
             prefs.put("credentials_enable_service", false);
             prefs.put("profile.password_manager_enabled", false);
@@ -317,7 +313,7 @@ public class DriverManager {
             // ── Firefox fallback ──────────────────────────────────────────
             FirefoxOptions options = new FirefoxOptions();
             options.addPreference("browser.download.folderList", 2);
-            options.addPreference("browser.download.dir", workspacePath);
+        
             options.addPreference("browser.helperApps.neverAsk.saveToDisk",
                     "application/pdf,application/octet-stream,application/vnd.ms-excel");
             options.addPreference("pdfjs.disabled", true);
