@@ -11,8 +11,8 @@ Feature: Switch Portal based on Job Code
     Then the correct portal should be selected
 
     Examples:
-      | jobCode     |
-      | KPF018988   |
+      | jobCode     |    
       | J010726     |
-      | KPF019282     |
+      | KPF019282   |
+
      

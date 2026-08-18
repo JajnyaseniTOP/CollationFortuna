@@ -24,6 +24,10 @@ public class FindJob extends MainClass {
 	public static String internalteam = "";
 	public static String clientnamecode = "";
 	public static String groupName = "";
+	public static String cientCode = "";
+//	public static String taxReturnpayble = "";
+//	public static String taxamount = "";
+	
 
 	@FindBy(xpath="//span[@class='xnav-appbutton--text' and text()='Fortuna Unit Trust']")
 	private static WebElement switchPortal_keypoint;
@@ -51,6 +55,23 @@ public class FindJob extends MainClass {
 	private static WebElement internal_team;
 	@FindBy(xpath="//h1[@class='xui-pageheading--title']")
 	private static WebElement client_name_code;
+	
+	
+//	@FindBy(xpath="//a[normalize-space()='Tax Returns']") 
+//	private static WebElement taxReturn;
+//	@FindBy(xpath="//tr[@id='gridview-1018-record-ext-record-24']//a[contains(text(),'ITR')]") 
+//	private static WebElement itr;
+//	@FindBy(xpath="//div[contains(text(),'Amount payable')]") 
+//	private static WebElement paymentpayble;
+//	@FindBy(xpath="//div[contains(text(),'25,986.79')]") 
+//	private static WebElement amount;
+	
+	
+	@FindBy(xpath="//div[@data-automationid='information-item-businessName--value']//span")
+	private static WebElement client_name;	
+	@FindBy(xpath="//div[@data-automationid='information-item-clientReferenceCode--value']//span")
+	private static WebElement client_code;
+	
 	@FindBy(xpath="//span[normalize-space()='Groups']/following::span[contains(@class,'xui-pill--text')][1]")
 	private static WebElement client_GroupName;
 
@@ -123,11 +144,20 @@ public class FindJob extends MainClass {
 			System.out.println("Scroll failed, continuing anyway: " + e.getMessage());
 		}
 
-		clientnamecode = extractText(client_name_code, "Client Name Code", "No Value");
+		clientnamecode = extractText(client_name, "Client Name", "No Value");
 		groupName      = extractText(client_GroupName, "Group Name", "No GroupName");
 		internalteam   = extractText(internal_team, "Internal Team", "No Value");
+		cientCode   = extractText(client_code, "Internal Team", "No Value");
+//		taxReturn.click();
+//		itr.click();
+//		
+//		taxReturnpayble   = extractText(paymentpayble, "Tax Return", "No Value");
+//		taxamount   = extractText(amount, "value", "No Value");
+		
+		
+		
 
-		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode, groupName, internalteam);
+		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode,cientCode, groupName, internalteam);
 	}
 
 	/*====================Legacy ASP.NET client page (clientview.aspx layout)===================================*/
@@ -140,8 +170,11 @@ public class FindJob extends MainClass {
 		clientnamecode = "No Value";
 		groupName      = "No Value";
 		internalteam   = "No Value";
+		cientCode      =  "No Value";
+//		taxReturnpayble   = "No Value";
+//		taxamount   = "No Value";
 
-		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode, groupName, internalteam);
+		creator.insertData(extractedJobNo, coverLetterNotes, currentDate, clientName, clientnamecode,cientCode, groupName, internalteam);
 		
 	}
 	
@@ -151,7 +184,7 @@ public class FindJob extends MainClass {
 	/*====================Helper: extract text with fallback to "No Value"===================================*/
 	private static String extractText(WebElement element,String fieldLabelForLog,String defaultValue) {
 		try {
-			String value = element.getText().trim();
+			String value = element.getText();
 			if (value.isEmpty()) {
 				System.out.println(fieldLabelForLog + " was empty — defaulting to '" + defaultValue + "'");
 				return defaultValue;
@@ -238,10 +271,10 @@ public class FindJob extends MainClass {
 			extractClientDetailLegacy();
 		} else {
 			extractClientDetail();
+			
 		}
-	}
-	
-	public static void formatClientExcel() {
 		
 	}
+	
+
 }

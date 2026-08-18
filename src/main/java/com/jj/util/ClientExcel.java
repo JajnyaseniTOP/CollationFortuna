@@ -44,7 +44,7 @@ public class ClientExcel extends MainClass {
 
 		workbook = new HSSFWorkbook();
 		sheet = workbook.createSheet("Client Data");
-		String[] headers = {"Job No", "Cover Letter Notes", "Date","Client Name","Client Name Code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName"};
+		String[] headers = {"Job No", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10"};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);
@@ -69,7 +69,7 @@ public class ClientExcel extends MainClass {
 	}
 
 	/*====================Insert a row of data into the existing sheet===================================*/
-	public void insertData(String jobNo, String coverLetterNotes, String currentDate,String clientname, String clientNameCode,String GroupName,String internalTeam) {
+	public void insertData(String jobNo, String coverLetterNotes, String currentDate,String clientname, String clientNamexpm,String clientName,String GroupName,String internalTeam) {
 		if (workbook == null || sheet == null) {
 			createEmptyExcelSheet();
 		}
@@ -78,9 +78,16 @@ public class ClientExcel extends MainClass {
 		row.createCell(1).setCellValue(coverLetterNotes);
 		row.createCell(2).setCellValue(currentDate);
 		row.createCell(3).setCellValue(clientname);
-		row.createCell(4).setCellValue(clientNameCode);
-		row.createCell(5).setCellValue(GroupName);
-		row.createCell(6).setCellValue(internalTeam);
+		row.createCell(4).setCellValue(clientNamexpm);
+		
+		row.createCell(5).setCellValue(clientName);//newly added
+		
+		row.createCell(6).setCellValue(GroupName);
+		row.createCell(7).setCellValue(internalTeam);
+		
+		
+		
+		
 		createCombinedColumns(row); 
 		
 
@@ -92,17 +99,48 @@ public class ClientExcel extends MainClass {
 	
 	/*====================Create Combined Columns for Current Row===================================*/
 	private void createCombinedColumns(Row row) {
+	    String clientName   = getCellValue(row.getCell(4));
+	    String clientCode   = getCellValue(row.getCell(5));
+	    String groupName    = getCellValue(row.getCell(6));
+	    String internalTeam = getCellValue(row.getCell(7));
 
-	    String clientName   = getCellValue(row.getCell(3));
-	    String clientCode   = getCellValue(row.getCell(4));
-	    String groupName    = getCellValue(row.getCell(5));
-	    String internalTeam = getCellValue(row.getCell(6));
-
-	    row.createCell(7).setCellValue(groupName + " - " + internalTeam);
-	    row.createCell(8).setCellValue(clientCode + " - " + internalTeam);
-	    row.createCell(9).setCellValue(clientName + " - " + internalTeam);
+	    String clientNameWithTeam = clientName + " - " + internalTeam;	
+	    row.createCell(8).setCellValue(groupName + " - " + internalTeam);	      
+	    row.createCell(9).setCellValue(clientName + " (" + clientCode + ") - " + internalTeam);
+	    row.createCell(10).setCellValue(clientNameWithTeam);	   
+	    String formattedClientName = formatClientName(clientNameWithTeam);
+	    row.createCell(11).setCellValue(formattedClientName);
 	}
 
+
+	private String formatClientName(String value) {
+	    String[] parts = value.split("\\s+-\\s+", 2);
+	    if (parts.length != 2) {
+	        return value;
+	    }
+	    String clientName = parts[0];
+	    String internalTeam = parts[1];	    
+	    String lowerClientName = clientName.toLowerCase();	   
+	    if (lowerClientName.contains("pty")
+	            || lowerClientName.contains("ltd")
+	            || lowerClientName.contains("superannuation")
+	            || lowerClientName.contains("family trust")) {
+
+	        return value;
+	    }
+
+	  
+	    String[] words = clientName.trim().split("\\s+");	   
+	    if (words.length >= 2) {
+	        StringBuilder reversedName = new StringBuilder();	       
+	        reversedName.append(words[words.length - 1]);
+	        for (int i = words.length - 2; i >= 0; i--) {
+	            reversedName.append(", ").append(words[i]);
+	        }
+	        return reversedName + " - " + internalTeam;
+	    }
+	    return value;
+	}
 	private String getCellValue(Cell cell) {
 	    return (cell == null) ? "" : cell.toString().trim();
 	}
