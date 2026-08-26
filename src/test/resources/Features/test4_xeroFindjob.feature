@@ -1,4 +1,4 @@
-@order4
+@order5
 Feature: Switch Portal based on Job Code
 
   As a user
@@ -13,6 +13,6 @@ Feature: Switch Portal based on Job Code
     Examples:
       | jobCode     |    
       | J010726     |
-      | KPF019282   |
+     
 
      

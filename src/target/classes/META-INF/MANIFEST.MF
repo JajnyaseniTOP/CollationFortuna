@@ -1,6 +1,0 @@
-Manifest-Version: 1.0
-Built-By: TOP
-Build-Jdk: 21.0.5
-Created-By: Maven Integration for Eclipse
-Main-Class: cucumber.api.cli.Main
-

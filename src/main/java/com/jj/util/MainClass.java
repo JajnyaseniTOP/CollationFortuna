@@ -20,6 +20,7 @@ public class MainClass {
     }
 	public static WebDriver driver;
 	public static String currentDate = LocalDate.now().toString();
+	public static String clientName = "Carnarvon Regional Labour Hire Pty Ltd";
 
 
 
@@ -52,6 +53,10 @@ public class MainClass {
 	/*====================Set Properties===================================*/
 
 	public void setProperties() {
+		String configuredClientName = System.getProperty("CLIENT_NAME");
+		if (configuredClientName != null && !configuredClientName.trim().isEmpty()) {
+			clientName = configuredClientName.trim();
+		}
 		ATO_USER_NAME=System.getProperty("ATO_Id");
 		XERO_USER_NAME=System.getProperty("XERO_Id");
 		XERO_PASSWORD=System.getProperty("XERO_Password");

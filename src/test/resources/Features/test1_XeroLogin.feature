@@ -1,4 +1,4 @@
-@order1
+@order2
 
 Feature: Verify User is able to Login xero
 

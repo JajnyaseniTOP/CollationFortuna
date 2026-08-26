@@ -279,6 +279,9 @@ public class DriverManager {
             options.addArguments("--disable-infobars");
             options.addArguments("--disable-extensions");
             options.addArguments("--disable-popup-blocking");
+                options.addArguments("--user-data-dir=" +
+                    System.getProperty("java.io.tmpdir") + File.separator +
+                    "fortunacollation-chrome-" + UUID.randomUUID());
  
             // Exclude automation indicators
             options.setExperimentalOption("excludeSwitches",
