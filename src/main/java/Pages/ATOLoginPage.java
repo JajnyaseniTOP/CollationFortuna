@@ -1,21 +1,35 @@
 package Pages;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WindowType;
 import org.openqa.selenium.SearchContext;
 import org.openqa.selenium.NoSuchShadowRootException;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.PageFactory;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import com.jj.util.Dom;
+import com.jj.util.DomCapture;
 import com.jj.util.MainClass;
 
 import Driver_manager.DriverManager;
@@ -23,6 +37,10 @@ import Driver_manager.DriverManager;
 public class ATOLoginPage extends MainClass {
 
 	private static final String DEFAULT_EMAIL = "shravika.arora@fortunaadvisors.com.au";
+
+	/** How long the run holds for the myID prompt to be approved on the device. */
+	private static final Duration MYID_APPROVAL_WINDOW = Duration.ofSeconds(180);
+
 	private static final By CONTINUE_WITH_DIGITAL_ID = By.xpath(
 			"//*[self::button or self::a or self::span][contains(normalize-space(), 'Continue with Digital ID')]");
 	private static final By SELECT_MY_ID = By.xpath(
@@ -39,6 +57,18 @@ public class ATOLoginPage extends MainClass {
 	private static final By ATO_TABLES = By.xpath("//*[@role='table']");
 	private static final By ATO_TABLE_COMPONENT = By.cssSelector("ng-com-table");
 	private static final By TABLE_HEADERS = By.xpath(".//*[@role='columnheader']");
+
+	private static final String ATO_HOME_URL = "https://onlineservices.ato.gov.au/OnlineServices/Home#home";
+	private static final By ACCOUNTS_AND_PAYMENTS = By.xpath(
+			"//*[self::span or self::a or self::button]"
+			+ "[contains(normalize-space(), 'Accounts and payments')"
+			+ " or contains(normalize-space(), 'Accounts & payments')]");
+	private static final By ACCOUNTS_SUMMARY = By.xpath(
+			"//*[self::span or self::a or self::button]"
+			+ "[contains(normalize-space(), 'Accounts summary')"
+			+ " or contains(normalize-space(), 'Account summary')]");
+	private static final String[] ACTIVITY_STATEMENT_KEYS = {"activity statement", "integrated client account"};
+	private static final String[] DOWNLOAD_KEYS = {"download", "statement of account", "print", "export"};
 
 	@FindBy(xpath = "//input[@type='email']")
 	private WebElement emailAddress;
@@ -92,15 +122,93 @@ public class ATOLoginPage extends MainClass {
 			sendingEmailAddress(email);
 			clickOnLoginButton();
 		}
-		Thread.sleep(3000);
+		waitForMyIdApproval(MYID_APPROVAL_WINDOW);
 	}
 
+	/**
+	 * Holds while the myID approval is accepted on the operator's device.
+	 *
+	 * <p>This is the one step the bot cannot perform itself, so it polls rather than
+	 * sleeping: the run carries on the moment the portal shows an authenticated page,
+	 * and only uses the whole window if the approval never arrives.
+	 */
+	private void waitForMyIdApproval(Duration window) {
+		WebDriver driver = DriverManager.getDriver();
+
+		if (isAlreadyAuthenticated()) {
+			return;
+		}
+
+		System.out.println("=========================================================");
+		System.out.println(" Waiting up to " + window.getSeconds() + "s for the myID approval.");
+		System.out.println(" Approve the prompt on your device when it arrives.");
+		System.out.println("=========================================================");
+
+		long deadline = System.currentTimeMillis() + window.toMillis();
+		String lastReported = "";
+
+		while (System.currentTimeMillis() < deadline) {
+			if (isAlreadyAuthenticated()) {
+				System.out.println("myID approved — ATO portal authenticated.");
+				return;
+			}
+
+			String title = String.valueOf(driver.getTitle());
+			if (!title.equals(lastReported)) {
+				System.out.println("  login page: " + title);
+				lastReported = title;
+			}
+
+			// Digital ID can hand back to the provider chooser or the email form part
+			// way through, so keep nudging the flow rather than assuming one sequence
+			// of clicks got us all the way to the prompt.
+			try {
+				if (hasElement(SELECT_MY_ID)) {
+					clickOnSelectmyIDButton();
+				} else if (hasElement(CONTINUE_WITH_DIGITAL_ID)) {
+					clickOnMyGOVButton();
+				} else if (hasElement(EMAIL_INPUT) && emailBoxIsEmpty()) {
+					sendingEmailAddress(MainClass.ATO_USER_NAME);
+					clickOnLoginButton();
+				}
+			} catch (Exception e) {
+				// A page can change under us mid-click; the next pass picks it up.
+			}
+
+			try {
+				Thread.sleep(2000);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+		}
+
+		System.out.println("No myID approval after " + window.getSeconds() + "s (last page: "
+				+ driver.getTitle() + ").");
+		DomCapture capture = new DomCapture();
+		capture.capture(driver, "ato-login-not-approved");
+		System.out.println("Login page captured to: " + capture.getFolder());
+	}
+
+	private boolean emailBoxIsEmpty() {
+		for (WebElement input : DriverManager.getDriver().findElements(EMAIL_INPUT)) {
+			String value = input.getAttribute("value");
+			return value == null || value.trim().isEmpty();
+		}
+		return false;
+	}
+
+	/**
+	 * Signed in if we are anywhere inside Online services with no login control in
+	 * sight — not just on the home page. Each job leaves the tab on whatever ATO page
+	 * it finished with, and all of those are equally signed in.
+	 */
 	private boolean isAlreadyAuthenticated() {
 		String url = DriverManager.getDriver().getCurrentUrl();
-		boolean onAtoHome = url.contains("/OnlineServices/Home");
+		boolean insideOnlineServices = url.contains("onlineservices.ato.gov.au/OnlineServices");
 		boolean loginControlsAbsent = !hasElement(CONTINUE_WITH_DIGITAL_ID)
 				&& !hasElement(SELECT_MY_ID) && !hasElement(EMAIL_INPUT);
-		return onAtoHome && loginControlsAbsent;
+		return insideOnlineServices && loginControlsAbsent;
 	}
 
 	private boolean hasElement(By locator) {
@@ -122,27 +230,7 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
         throw new IllegalArgumentException("Client name must not be empty");
     }
 
-    String searchClientName = clientName.trim();
-
-    WebDriver driver = DriverManager.getDriver();
-
-    WebDriverWait atoWait = new WebDriverWait(driver, Duration.ofSeconds(60));
-
-    WebElement search = atoWait.until(
-            ExpectedConditions.elementToBeClickable(CLIENT_SEARCH)
-    );
-
-    System.out.println("ATO client name: " + searchClientName);
-
-    search.click();
-    search.clear();
-    search.sendKeys(searchClientName);
-
-    System.out.println("Client name entered: " + searchClientName);
-
-    Thread.sleep(2000);
-
-    clickClientSuggestion(atoWait, searchClientName);
+    WebDriverWait atoWait = searchAndOpenClient(clientName);
 
     atoWait.until(
             ExpectedConditions.elementToBeClickable(PROFILE)
@@ -165,38 +253,404 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
     return findWithholdingValueInShadowTableExact(atoWait);
 }
 
-	private String findWithholdingValueInShadowTableExact(WebDriverWait atoWait) {
-		return atoWait.until(browser -> {
-			String script = "const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
-					+ "let answer=null;"
+	/*==================== Client search ====================*/
+
+	/**
+	 * Types the client name into the ATO search box and opens the matching client.
+	 *
+	 * <p>Called twice per run — once for the lodgement cycle, once for the account
+	 * statements — so it returns to the ATO home page whenever the current page has
+	 * no search box, such as after drilling into Tax registrations.
+	 */
+	private WebDriverWait searchAndOpenClient(String clientName) throws InterruptedException {
+		WebDriver driver = DriverManager.getDriver();
+		if (driver.findElements(CLIENT_SEARCH).isEmpty()) {
+			System.out.println("No client search box on the current page — returning to the ATO home page.");
+			driver.get(ATO_HOME_URL);
+		}
+
+		String searchClientName = clientName.trim();
+		WebDriverWait atoWait = new WebDriverWait(driver, Duration.ofSeconds(60));
+
+		WebElement search = awaitClientSearch();
+		System.out.println("ATO client name: " + searchClientName);
+
+		search.click();
+		search.clear();
+		search.sendKeys(searchClientName);
+		System.out.println("Client name entered: " + searchClientName);
+
+		Thread.sleep(2000);
+		clickClientSuggestion(atoWait, searchClientName);
+		return atoWait;
+	}
+
+	/**
+	 * Waits for the agent home's client search box, reloading between attempts.
+	 *
+	 * <p>After the myID approval the agent home regularly stops on its loading shell:
+	 * the title stays "Loading", nothing renders into the page, and no amount of
+	 * waiting fixes it. A reload populates it in about a second, so this reloads
+	 * rather than waiting out a page that is never going to finish.
+	 */
+	/**
+	 * Lists what the registrations tables actually contain.
+	 *
+	 * <p>Printed when no cycle is found, so an NA distinguishes "the client has no
+	 * registrations" from "the rows are there and the match missed them".
+	 */
+	private String readRegistrationRows() {
+		try {
+			String script = Dom.DEEP_TEXT
+					+ "const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
+					+ "const out=[];"
 					+ "function walk(root){"
-					+ "if(answer)return;"
-					+ "for(const table of root.querySelectorAll(\"[role='table']\")){"
-					+ "const headers=[...table.querySelectorAll(\"[role='columnheader']\")];"
-					+ "const column=headers.findIndex(h=>{const x=clean(h.textContent).toLowerCase();"
-					+ "return x.includes('lodgement type')||x.includes('lodgment cycle')||x.includes('lodgement cycle');});"
-					+ "if(column<0)continue;"
-					+ "const hosts=[...table.querySelectorAll('ng-com-table-row')];"
-					+ "for(const host of hosts){"
-					+ "const roots=host.shadowRoot?[host.shadowRoot]:[host];"
-					+ "for(const rowRoot of roots){"
-					+ "let cells=[...rowRoot.querySelectorAll(\"[role='cell'],[role='gridcell'],td\")];"
-					+ "if(!cells.length)cells=[...rowRoot.querySelectorAll(\"[class*='cell'],[class*='column']\")];"
-					+ "if(cells.length>column&&clean(cells[0].textContent).toLowerCase().includes('withholding')){"
-					+ "const value=clean(cells[column].textContent);if(value)return answer=value;}}}"
-					+ "for(const row of table.querySelectorAll(\"[role='row']\")){"
-					+ "const cells=[...row.querySelectorAll(\"[role='cell'],[role='gridcell'],td\")];"
-					+ "if(cells.length>column&&clean(cells[0].textContent).toLowerCase().includes('withholding')){"
-					+ "const value=clean(cells[column].textContent);if(value)return answer=value;}}}"
-					+ "for(const element of root.querySelectorAll('*'))if(element.shadowRoot)walk(element.shadowRoot);"
-					+ "}walk(document);return answer;";
-			String value = (String) ((JavascriptExecutor) browser).executeScript(script);
-			if (value != null && !value.isEmpty()) {
-				System.out.println("Lodgement Type for withholding: " + value);
-				return value;
+					+ "for(const row of root.querySelectorAll(\"[role='row'],tr,ng-com-table-row,com-table-tr\")){"
+					+ "const t=clean(deepText(row));"
+					+ "if(t)out.push('  | '+t.slice(0,140));}"
+					+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot)walk(el.shadowRoot);}"
+					+ "walk(document);"
+					+ "return out.length ? out.join('\\n') : '  (no rows found on the page at all)';";
+
+			return String.valueOf(((JavascriptExecutor) DriverManager.getDriver()).executeScript(script));
+		} catch (Exception e) {
+			return "  (could not read the page: " + e.getMessage() + ")";
+		}
+	}
+
+	private WebElement awaitClientSearch() {
+		WebDriver driver = DriverManager.getDriver();
+
+		for (int attempt = 1; attempt <= 3; attempt++) {
+			try {
+				return new WebDriverWait(driver, Duration.ofSeconds(20))
+						.until(ExpectedConditions.elementToBeClickable(CLIENT_SEARCH));
+			} catch (TimeoutException e) {
+				System.out.println("No client search box yet (attempt " + attempt + ", title '"
+						+ driver.getTitle() + "') — reloading the agent home.");
+				driver.navigate().refresh();
 			}
+		}
+
+		DomCapture capture = new DomCapture();
+		capture.capture(driver, "ato-no-client-search");
+		throw new IllegalStateException("No client search box at " + driver.getCurrentUrl()
+				+ " after three attempts. The page has been captured to: " + capture.getFolder());
+	}
+
+	/*==================== Accounts and payments -> Accounts summary -> statements ====================*/
+
+	/**
+	 * Brings the ATO portal to the front, reusing its tab when one is already open.
+	 *
+	 * <p>Every job does its own ATO lookup, so opening a fresh tab each time would
+	 * stack them up and, worse, throw away the session that was approved on the first
+	 * job — costing an myID approval per job instead of one for the run.
+	 */
+	public void openAtoPortal() {
+		WebDriver driver = DriverManager.getDriver();
+
+		for (String handle : driver.getWindowHandles()) {
+			driver.switchTo().window(handle);
+			if (driver.getCurrentUrl().contains("ato.gov.au")) {
+				System.out.println("Reusing the ATO tab.");
+				// Back to the agent home: the previous job leaves this tab deep in an
+				// account's transactions, which is neither a recognisable signed-in
+				// page nor a place the next client search can start from.
+				driver.get(ATO_HOME_URL);
+				PageFactory.initElements(driver, this);
+				return;
+			}
+		}
+
+		driver.switchTo().newWindow(WindowType.TAB);
+		driver.get(ATO_HOME_URL);
+		driver.manage().window().maximize();
+		if (wait == null) {
+			wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+		}
+		PageFactory.initElements(driver, this);
+	}
+
+	/**
+	 * Searches the client, opens Accounts and payments -> Accounts summary and
+	 * downloads the activity statement and income tax account statements.
+	 *
+	 * @return the names of the files saved into the ATO statements folder
+	 */
+	public List<String> downloadAccountStatements(String clientName) throws InterruptedException {
+		if (clientName == null || clientName.trim().isEmpty()) {
+			throw new IllegalArgumentException("Client name must not be empty");
+		}
+
+		WebDriverWait atoWait = searchAndOpenClient(clientName);
+		openAccountsSummary(atoWait);
+
+		List<String> downloaded = new ArrayList<>();
+
+		// Activity statement only. The income tax account is deliberately not collected.
+		downloadAccountStatement(atoWait, "Activity statement", ACTIVITY_STATEMENT_KEYS, clientName, downloaded);
+
+		return downloaded;
+	}
+
+	private void openAccountsSummary(WebDriverWait atoWait) throws InterruptedException {
+		atoWait.until(ExpectedConditions.elementToBeClickable(ACCOUNTS_AND_PAYMENTS)).click();
+		Thread.sleep(1000);
+		atoWait.until(ExpectedConditions.elementToBeClickable(ACCOUNTS_SUMMARY)).click();
+		atoWait.until(d -> !d.findElements(ATO_TABLE_COMPONENT).isEmpty() || !d.findElements(ATO_TABLES).isEmpty());
+		System.out.println("Accounts summary opened.");
+	}
+
+	private void downloadAccountStatement(WebDriverWait atoWait, String label, String[] accountKeys,
+			String clientName, List<String> downloaded) throws InterruptedException {
+		try {
+			WebElement accountLink = findInShadowDom(atoWait, accountKeys, "a, button, [role='link']");
+			System.out.println("Opening ATO account: " + label);
+			clickWithJs(accountLink);
+			Thread.sleep(3000);
+
+			System.out.println("  account page: " + DriverManager.getDriver().getCurrentUrl());
+
+			Set<String> before = snapshotDownloads();
+			WebElement downloadControl;
+			try {
+				downloadControl = findInShadowDom(atoWait, DOWNLOAD_KEYS,
+						"a, button, [role='button'], [role='link']");
+			} catch (Exception e) {
+				DomCapture capture = new DomCapture();
+				capture.capture(DriverManager.getDriver(), "ato-" + label.replace(' ', '-') + "-no-download");
+				System.out.println("  no download control on the " + label + " page — captured to: "
+						+ capture.getFolder());
+				return;
+			}
+			clickWithJs(downloadControl);
+			Thread.sleep(4000);
+			System.out.println("  print view: " + DriverManager.getDriver().getCurrentUrl());
+
+			// The ATO offers a print view rather than a file: its only control opens the
+			// browser's print dialog, which yields nothing a script can collect. Render
+			// the page to PDF through DevTools instead.
+			String saved = savePageAsPdf(clientName, label);
+			if (saved != null) {
+				downloaded.add(saved);
+				return;
+			}
+
+			// Some pages may still push a real file; honour that if it happens.
+			String newFile = waitForNewDownload(before, Duration.ofSeconds(20));
+			if (newFile == null) {
+				System.out.println("No " + label + " file produced for " + clientName);
+				return;
+			}
+			downloaded.add(renameDownload(newFile, clientName, label));
+		} catch (Exception e) {
+			System.out.println("Unable to download the " + label + " statement: " + e.getMessage());
+		}
+	}
+
+	/** Finds the first element matching one of the keywords, descending into shadow roots. */
+	private WebElement findInShadowDom(WebDriverWait atoWait, String[] keywords, String selector) {
+		StringBuilder keys = new StringBuilder("[");
+		for (int index = 0; index < keywords.length; index++) {
+			if (index > 0) {
+				keys.append(",");
+			}
+			keys.append("'").append(keywords[index]).append("'");
+		}
+		keys.append("]");
+
+		String script = "const keys=" + keys + ";"
+				+ "const sel=\"" + selector + "\";"
+				+ "const clean=v=>(v||'').replace(/\\s+/g,' ').trim().toLowerCase();"
+				// Read through shadow roots: an account name sits in a nested component,
+				// so textContent alone comes back empty for the row that holds it.
+				+ "function deepText(node){let out='';"
+				+ "for(const c of node.childNodes){"
+				+ "if(c.nodeType===3){out+=c.nodeValue+' ';}"
+				+ "else if(c.nodeType===1){if(c.shadowRoot)out+=deepText(c.shadowRoot);out+=deepText(c);}}"
+				+ "return out;}"
+				+ "let found=null;"
+				+ "function walk(root){"
+				+ "if(found)return;"
+				+ "for(const el of root.querySelectorAll(sel)){"
+				// Visible only. The collapsed navigation menu also holds 'Income tax'
+				// and 'Activity statements', and it comes first in document order, so
+				// without this the search leaves the Accounts summary for Lodgments.
+				+ "if(el.getClientRects().length===0)continue;"
+				+ "const text=clean(deepText(el))+' '+clean(el.getAttribute('aria-label'))+' '+clean(el.getAttribute('title'));"
+				+ "if(keys.some(k=>text.includes(k))){found=el;return;}}"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot){walk(el.shadowRoot);if(found)return;}"
+				+ "}walk(document);return found;";
+
+		return atoWait.until(browser -> (WebElement) ((JavascriptExecutor) browser).executeScript(script));
+	}
+
+	private void clickWithJs(WebElement element) {
+		JavascriptExecutor js = (JavascriptExecutor) DriverManager.getDriver();
+		js.executeScript("arguments[0].scrollIntoView({block:'center'});", element);
+		try {
+			element.click();
+		} catch (Exception e) {
+			js.executeScript("arguments[0].click();", element);
+		}
+	}
+
+	/**
+	 * Renders the current page to a PDF through Chrome DevTools.
+	 *
+	 * <p>The ATO's account screens offer "Print-friendly version", which leads to a
+	 * print view whose only action opens the browser print dialog — nothing lands on
+	 * disk and no script can dismiss it. Page.printToPDF gives the same document
+	 * without a dialog.
+	 *
+	 * @return the file name written, or null if this browser cannot print to PDF
+	 */
+	private String savePageAsPdf(String clientName, String label) {
+		WebDriver driver = DriverManager.getDriver();
+
+		if (!(driver instanceof ChromeDriver)) {
 			return null;
-		});
+		}
+
+		try {
+			Map<String, Object> params = new HashMap<>();
+			params.put("printBackground", true);
+			params.put("preferCSSPageSize", true);
+
+			Map<String, Object> result =
+					((ChromeDriver) driver).executeCdpCommand("Page.printToPDF", params);
+
+			String data = String.valueOf(result.get("data"));
+			if (data.isEmpty() || "null".equals(data)) {
+				return null;
+			}
+
+			File directory = new File(DriverManager.getDownloadDirectory());
+			if (!directory.exists()) {
+				directory.mkdirs();
+			}
+
+			String safeClientName = clientName.trim().replaceAll("[\\\\/:*?\"<>|]", "-");
+			File target = new File(directory,
+					safeClientName + " - " + label + " - " + LocalDate.now() + ".pdf");
+
+			Files.write(target.toPath(), Base64.getDecoder().decode(data));
+
+			System.out.println("  saved " + label + ": " + target.getAbsolutePath()
+					+ " (" + target.length() / 1024 + " KB)");
+			return target.getName();
+
+		} catch (Exception e) {
+			System.out.println("  could not print the " + label + " page to PDF: " + e.getMessage());
+			return null;
+		}
+	}
+
+	private Set<String> snapshotDownloads() {
+		Set<String> names = new HashSet<>();
+		File[] files = new File(DriverManager.getDownloadDirectory()).listFiles();
+		if (files != null) {
+			for (File file : files) {
+				names.add(file.getName());
+			}
+		}
+		return names;
+	}
+
+	private String waitForNewDownload(Set<String> before, Duration timeout) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + timeout.toMillis();
+		while (System.currentTimeMillis() < deadline) {
+			File[] files = new File(DriverManager.getDownloadDirectory()).listFiles();
+			if (files != null) {
+				for (File file : files) {
+					String name = file.getName();
+					if (!before.contains(name) && !name.endsWith(".crdownload") && !name.endsWith(".tmp")) {
+						return name;
+					}
+				}
+			}
+			Thread.sleep(500);
+		}
+		return null;
+	}
+
+	private String renameDownload(String fileName, String clientName, String label) {
+		File directory = new File(DriverManager.getDownloadDirectory());
+		File source = new File(directory, fileName);
+		int dot = fileName.lastIndexOf('.');
+		String extension = dot < 0 ? "" : fileName.substring(dot);
+		String safeClientName = clientName.trim().replaceAll("[\\\\/:*?\"<>|]", "-");
+		File target = new File(directory, safeClientName + " - " + label + " - " + LocalDate.now() + extension);
+
+		if (source.renameTo(target)) {
+			System.out.println("Saved " + label + ": " + target.getAbsolutePath());
+			return target.getName();
+		}
+		System.out.println("Saved " + label + ": " + source.getAbsolutePath());
+		return fileName;
+	}
+
+	/**
+	 * Reads the BAS lodgement cycle off the Current registrations table.
+	 *
+	 * <p>Priority is set by the scope of work: the PAYG Withholding cycle decides the
+	 * BAS cycle whenever the client is registered for it. The GST cycle is only used
+	 * as a fallback when there is no withholding registration to read a cycle from.
+	 * Both are searched across the whole table before a winner is picked, so row
+	 * order in the ATO table cannot let GST override withholding.
+	 */
+	private String findWithholdingValueInShadowTableExact(WebDriverWait atoWait) {
+		// Read each row as a whole line of text rather than picking cells by index.
+		// The ATO builds rows from ng-com-table-row / com-table-td custom elements
+		// whose values arrive through slots, so cell-by-cell indexing is fragile;
+		// "Pay as you go withholding Quarterly 01 Jul 2019" as one string is not.
+		String script = Dom.DEEP_TEXT
+				+ "const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
+				+ "const preferences=["
+				+ "['withholding','pay as you go - withholding','pay as you go - witholding','payg withholding'],"
+				+ "['goods & services tax','goods and services tax','gst']"
+				+ "];"
+				+ "const found=new Array(preferences.length).fill(null);"
+				+ "const rows=[];"
+				+ "function collect(root){"
+				+ "for(const row of root.querySelectorAll(\"[role='row'],tr,ng-com-table-row,com-table-tr\"))rows.push(row);"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot)collect(el.shadowRoot);"
+				+ "}"
+				+ "collect(document);"
+				+ "for(const row of rows){"
+				+ "const text=clean(deepText(row));"
+				+ "if(!text)continue;"
+				// Current registrations only. The historical table underneath repeats the
+				// same registrations with their old cycles — Carnarvon's withholding
+				// shows Monthly today and Quarterly before 30/06/2024 — and its rows
+				// carry a Cancellation column the current table does not have.
+				+ "if(/cancellation/i.test(text))break;"
+				+ "const lower=text.toLowerCase();"
+				+ "const cycle=(text.match(/quarterly|monthly/i)||[null])[0];"
+				+ "if(!cycle)continue;"
+				+ "for(let p=0;p<preferences.length;p++){"
+				+ "if(found[p])continue;"
+				+ "if(preferences[p].some(k=>lower.includes(k))){found[p]=cycle;break;}"
+				+ "}"
+				+ "}"
+				+ "for(const value of found) if(value) return value;"
+				+ "return null;";
+
+		WebDriverWait cycleWait = new WebDriverWait(DriverManager.getDriver(), Duration.ofSeconds(20));
+		try {
+			String value = cycleWait.until(browser -> {
+				String result = (String) ((JavascriptExecutor) browser).executeScript(script);
+				return result == null || result.isEmpty() ? null : result;
+			});
+			System.out.println("ATO registration cycle extracted: " + value);
+			return value;
+		} catch (TimeoutException e) {
+			System.out.println("No PAYG withholding or GST lodgement cycle found — defaulting to NA");
+			System.out.println("Registration rows actually on the page:");
+			System.out.println(readRegistrationRows());
+			return "NA";
+		}
 	}
 
 

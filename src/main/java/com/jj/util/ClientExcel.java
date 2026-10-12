@@ -9,6 +9,8 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -26,7 +28,18 @@ public class ClientExcel extends MainClass {
 	private static int currentRowNum = 1;
 	private static int currentRowNum3 = 1;
 
-	private static final String FILE_NAME = "ClientData.xls";
+	/**
+	 * Each run writes its own workbook, stamped with the time it started.
+	 *
+	 * <p>Appending to one shared file meant every abandoned or half-finished run left
+	 * its rows behind, so the sheet accumulated partial jobs that look exactly like
+	 * good ones. A file per run is self-evidently the output of that run.
+	 *
+	 * <p>Static, so every step of the run writes to the same workbook.
+	 */
+	private static final String FILE_NAME = "ClientData_"
+			+ java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+			+ ".xls";
 	private static final DateTimeFormatter MONTH_FORMATTER = DateTimeFormatter.ofPattern("MMM yyyy");
 	private static final Pattern QUARTER_RANGE_PATTERN = Pattern.compile(
 			"(?i)Q([1-4])\\s*(\\d{4})\\s*-\\s*Q([1-4])\\s*(\\d{4})");
@@ -47,12 +60,20 @@ public class ClientExcel extends MainClass {
 	public void createEmptyExcelSheet() {
 		File file = getTargetFile();
 
+		// Within a run this is called more than once, so reuse the workbook already in
+		// hand rather than starting the sheet over and losing the rows written so far.
+		if (workbook != null && sheet != null) {
+			System.out.println("Using this run's workbook: " + file.getAbsolutePath());
+			return;
+		}
+
 		if (file.exists()) {
-			System.out.println("Excel file already exists at: " + file.getAbsolutePath() + " — skipping creation.");
+			System.out.println("Reopening this run's workbook: " + file.getAbsolutePath());
 			loadExistingWorkbook(file);
 			return;
 		}
 
+		System.out.println("Creating this run's workbook: " + file.getAbsolutePath());
 		workbook = new HSSFWorkbook();
 		sheet = workbook.createSheet("Client Data");
 		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter"};
@@ -134,14 +155,18 @@ public class ClientExcel extends MainClass {
 		if (workbook == null || sheet == null) {
 			createEmptyExcelSheet();
 		}
-		boolean firstMonth = true;
-		for (YearMonth month : getMonthsForQuarterRange(quarters)) {
+		List<CollationPeriod> periods = collationPeriods(quarters, atoQuarter);
+		System.out.println("Lodgement cycle '" + atoQuarter + "' -> writing " + periods.size()
+				+ (isQuarterlyCycle(atoQuarter) ? " quarterly" : " monthly") + " row(s) for " + quarters);
+
+		boolean firstPeriod = true;
+		for (CollationPeriod period : periods) {
 			Row row = sheet.getRow(currentRowNum);
 			if (row == null) {
 				row = sheet.createRow(currentRowNum);
 			}
 			currentRowNum++;
-			if (firstMonth) {
+			if (firstPeriod) {
 				row.createCell(0).setCellValue(jobNo);
 				if (getCellValue(row.getCell(1)).isEmpty()) {
 					row.createCell(1).setCellValue(atoQuarter);
@@ -154,19 +179,123 @@ public class ClientExcel extends MainClass {
 				row.createCell(7).setCellValue(GroupName);
 				row.createCell(8).setCellValue(internalTeam);
 				createCombinedColumns(row);
-				firstMonth = false;
+				firstPeriod = false;
 			}
-			String monthValue = month.format(MONTH_FORMATTER);
-			row.createCell(13).setCellValue(monthValue);
-			String payable = payableByMonth.get(monthValue);
+			row.createCell(13).setCellValue(period.label);
+			String figureMonth = period.figureMonth.format(MONTH_FORMATTER);
+			String payable = payableByMonth.get(figureMonth);
 			row.createCell(14).setCellValue(payable == null ? "Not Found" : "Found");
 			row.createCell(15).setCellValue(payable == null ? "Not Found" : payable);
-			String amountPayable = amountPayableByMonth.get(monthValue);
+			String amountPayable = amountPayableByMonth.get(figureMonth);
 			row.createCell(16).setCellValue(amountPayable == null ? "Not Found" : amountPayable);
-			row.createCell(17).setCellValue(financialQuarterFor(month));
-		}
+			row.createCell(17).setCellValue(period.financialQuarter);
 
-		saveWorkbook(getTargetFile());
+			// Saved per row rather than once at the end: a job that fails part way
+			// through then still leaves everything it did manage on disk.
+			saveWorkbook(getTargetFile());
+		}
+	}
+
+	/*====================How many rows the BAS period needs===================================*/
+
+	/**
+	 * One row of the sheet: the label written to column N, the financial quarter for
+	 * column R, and the month whose Payable/Amount figures belong on the row.
+	 *
+	 * <p>The filesearch project decides monthly vs quarterly purely from column N —
+	 * "Apr 2026" is a month, "Q4 2026" is a quarter — so this is where the ATO
+	 * lodgement cycle turns into the number of documents to collate.
+	 */
+	private static final class CollationPeriod {
+		private final String label;
+		private final String financialQuarter;
+		private final YearMonth figureMonth;
+
+		private CollationPeriod(String label, String financialQuarter, YearMonth figureMonth) {
+			this.label = label;
+			this.financialQuarter = financialQuarter;
+			this.figureMonth = figureMonth;
+		}
+	}
+
+	/** True when the ATO lodgement cycle reads as quarterly rather than monthly. */
+	static boolean isQuarterlyCycle(String lodgementCycle) {
+		return lodgementCycle != null && lodgementCycle.toLowerCase(Locale.ENGLISH).contains("quarter");
+	}
+
+	/**
+	 * A monthly client gets one row per month of the BAS period — twelve for
+	 * Q4 2026-Q3 2027. A quarterly client gets one row per financial quarter — four
+	 * for the same range — and each quarter's figures are taken from its last month,
+	 * because that is the month the activity statement is filed under.
+	 *
+	 * <p>An unreadable cycle ("NA") falls back to monthly, which is the behaviour
+	 * this sheet has always had.
+	 */
+	static List<CollationPeriod> collationPeriods(String quarterRange, String lodgementCycle) {
+		return collationPeriods(BasPeriodParser.quartersFrom(quarterRange), lodgementCycle);
+	}
+
+	/**
+	 * The periods a job covers, paired with the figures written against each, ready
+	 * for the collation to copy documents and write cover letters.
+	 *
+	 * <p>Derived the same way as the rows, so the sheet and the client folders can
+	 * never disagree about which periods a job has.
+	 */
+	public static List<com.jj.collation.JobCollator.CollationTarget> collationTargets(
+			String jobName, String lodgementCycle,
+			Map<String, String> payableByMonth, Map<String, String> amountPayableByMonth) {
+
+		List<com.jj.collation.JobCollator.CollationTarget> targets = new ArrayList<>();
+
+		for (CollationPeriod period : collationPeriods(jobName, lodgementCycle)) {
+			String figureMonth = period.figureMonth.format(MONTH_FORMATTER);
+			String payable = payableByMonth.get(figureMonth);
+			String amount = amountPayableByMonth.get(figureMonth);
+
+			// A job's name can cover a whole year, so most of its periods are still in
+			// the future: the ATO has no statement for them and the client folder has
+			// no folder for them either. They belong in the sheet as "Not Found", but
+			// there is nothing to collate, so they are left out here.
+			if (payable == null) {
+				continue;
+			}
+
+			targets.add(new com.jj.collation.JobCollator.CollationTarget(
+					period.label,
+					period.financialQuarter,
+					payable,
+					amount == null ? "Not Found" : amount));
+		}
+		return targets;
+	}
+
+	/**
+	 * The rows one job needs, from the quarters its name covers.
+	 *
+	 * <p>A quarterly client gets a row per quarter; a monthly client gets a row for
+	 * each of the three months inside every quarter — so "Q3 27" alone becomes three
+	 * rows for a monthly client and one for a quarterly one.
+	 */
+	static List<CollationPeriod> collationPeriods(List<String> quarters, String lodgementCycle) {
+		List<CollationPeriod> periods = new ArrayList<>();
+
+		for (String quarter : quarters) {
+			if (isQuarterlyCycle(lodgementCycle)) {
+				List<YearMonth> months = BasPeriodParser.monthsIn(quarter);
+				if (!months.isEmpty()) {
+					// Figures come from the quarter's last month: that is the period the
+					// activity statement is filed under.
+					periods.add(new CollationPeriod(quarter, quarter, months.get(months.size() - 1)));
+				}
+			} else {
+				for (YearMonth month : BasPeriodParser.monthsIn(quarter)) {
+					periods.add(new CollationPeriod(month.format(MONTH_FORMATTER), quarter, month));
+				}
+			}
+		}
+		return periods;
 	}
 
 	public static List<YearMonth> getMonthsForQuarterRange(String quarterRange) {

@@ -1,18 +1,21 @@
 @order5
-Feature: Switch Portal based on Job Code
+Feature: Collate each BAS job
 
-  As a user
-  I want the system to switch to the correct portal
-  based on the prefix of the job code
+  Every job runs the whole sequence for itself: find it in Xero, read the client and
+  its tax returns, look that client up in the ATO, then write its rows.
 
-  Scenario Outline: Switch portal depending on job code prefix
+  The ATO leg used to run once after all the jobs, which meant only the last job was
+  ever looked up in the ATO and only its rows reached the sheet.
+
+  Scenario Outline: Collate one job
     Given the job code is "<jobCode>"
     When I switch the portal based on the job code
-    Then the correct portal should be selected
+    And the bot opens the ATO portal for the job's client
+    And the bot reads the BAS lodgement cycle
+    And the bot downloads the ATO statements when the estimated position is payable
+    Then the bot writes the ClientData rows for the BAS period
 
     Examples:
-      | jobCode     |    
-      | J010726     |
-     
-
-     
+      | jobCode     |
+      | KPF019886   |
+      | KPF018802   |

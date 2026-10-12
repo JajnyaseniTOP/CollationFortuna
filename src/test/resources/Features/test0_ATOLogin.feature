@@ -1,7 +1,8 @@
 @order1
-Feature: Start the workflow from the ATO portal
+Feature: Prepare the client workbook
 
-  Scenario: Launch ATO and prepare the client workbook
-    Given the user launches the ATO website
+  The ATO leg no longer runs here. It needs the client name and the estimated tax
+  position from the XPM job, so it runs last — see test5_ATOStatements.feature.
+
+  Scenario: Create the workbook the collation run writes into
     Then the bot creates the client Excel sheet
-    And the extracted ATO value is added to the second column

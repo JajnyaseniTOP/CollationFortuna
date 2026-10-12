@@ -3,6 +3,7 @@ package Pages;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.List;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
@@ -20,30 +21,14 @@ public class XeroPractiseManagerPage extends MainClass{
 
 	@FindBy(xpath="//button[@data-automationid='xnav-appbutton']")
 	WebElement client;
-	@FindBy(xpath="//a[contains(text(),'Practice Manager')]")
-	WebElement practiseManager;
 	@FindBy(xpath="//label[contains(text(),'Email address')]/following::input[@id='Code']")
 	WebElement emailAdd;
 	@FindBy(xpath="//button[contains(text(),'Continue')]")
 	WebElement continues;
-	
-	@FindBy(xpath="//span[contains(text(),'Fortuna Unit Trust t/as Keypoi…')]")
-	WebElement switchPortal_keypoint;
-	
-	@FindBy(xpath="//span[contains(text(),'Fortuna Accountants & Business…')]")
-	WebElement switchPortal_business;
-	
-	@FindBy(xpath = "//input[@value='Connect']")
-	WebElement clickConnect;
-	
-	@FindBy(xpath="//a[normalize-space()='Portal']")
-	WebElement clickPortal;
-	
-	@FindBy(xpath="(//div[contains(@class,'x-nav-xui-button--caret')])[1]")
-	WebElement dropDown ;
-	
-	@FindBy(xpath="//span[normalize-space(.)='Practice tools']")
-	WebElement practiceTools;
+
+	// The portal switchers, Portal/Connect buttons and nav caret that used to live
+	// here went with the Xero redesign. Practice switching is now per job, handled by
+	// FindJob.switchToPractice, and the menu locators sit further down this class.
 	
 	
 	public XeroPractiseManagerPage() {
@@ -54,62 +39,97 @@ public class XeroPractiseManagerPage extends MainClass{
 		client.click();
 	}
 	
+	/** Practice Manager's own address, used since it left the Xero navigation. */
+	private static final String PRACTICE_MANAGER_URL = "https://practicemanager.xero.com/app/homepage";
+
+	private static final By TENANT_MENU_BUTTON = By.cssSelector("button.x-nav--tenant-menu-button");
+
+	/** "Practice tools" is an accordion in the menu footer; Practice Manager sits inside it. */
+	private static final By PRACTICE_TOOLS = By.xpath(
+			"//li[@aria-label='Practice tools']//button[normalize-space()='Practice tools']");
+	private static final By PRACTICE_TOOLS_LIST = By.xpath("//ul[@aria-label='Practice tools list']");
+	private static final By PRACTICE_MANAGER_LINK = By.xpath(
+			"//ul[@aria-label='Practice tools list']//a[contains(normalize-space(), 'Practice Manager')]");
+
+	/**
+	 * Opens Practice Manager.
+	 *
+	 * <p>Xero's redesigned navigation no longer carries Practice Manager: the
+	 * "Practice tools" menu now lists only Xero Partner Hub, Classic Workpapers and
+	 * My Xero, and the words "Practice Manager" appear nowhere on the home page. The
+	 * app is therefore opened by its own address, which the login session already
+	 * covers.
+	 *
+	 * <p>The menu is still tried first, so a tenant that keeps the old entry carries
+	 * on working — and because that entry opened a new tab, the caller still follows
+	 * this with {@link #switchingTabs()}.
+	 */
 	public void clickPracticeManager() {
-	    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+
+	    if (clickPracticeManagerInMenu()) {
+	        return;
+	    }
+
+	    System.out.println("Practice Manager is not in the menu — opening " + PRACTICE_MANAGER_URL);
+	    driver.get(PRACTICE_MANAGER_URL);
+
+	    new WebDriverWait(driver, Duration.ofSeconds(30))
+	            .until(ExpectedConditions.urlContains("practicemanager.xero.com"));
+
+	    System.out.println("Practice Manager ready at: " + driver.getCurrentUrl());
+	}
+
+	/** @return true when the old menu entry was there and was clicked. */
+	private boolean clickPracticeManagerInMenu() {
+
 	    JavascriptExecutor js = (JavascriptExecutor) driver;
 
 	    try {
-	        // Open dropdown
-	        WebElement dropdown = wait.until(
-	            ExpectedConditions.elementToBeClickable(
-	                By.xpath("(//div[contains(@class,'x-nav-xui-button--caret')])[1]")
-	            )
-	        );
-	        dropdown.click();
+	        WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(5));
+	        shortWait.until(ExpectedConditions.elementToBeClickable(TENANT_MENU_BUTTON)).click();
+	        Thread.sleep(1500);
 
-	        // Wait for menu container
-	        WebElement menuContainer = wait.until(
-	            ExpectedConditions.visibilityOfElementLocated(
-	                By.xpath("//div[@aria-label='Organisation menu']")
-	            )
-	        );
+	        // The accordion starts collapsed, so open it unless the list is already out.
+	        if (driver.findElements(PRACTICE_TOOLS_LIST).isEmpty()) {
+	            WebElement practiceTools = shortWait.until(
+	                ExpectedConditions.presenceOfElementLocated(PRACTICE_TOOLS)
+	            );
+	            js.executeScript("arguments[0].scrollIntoView({block:'center'});", practiceTools);
+	            js.executeScript("arguments[0].click();", practiceTools);
+	            Thread.sleep(1000);
+	        }
 
-	        Thread.sleep(3000);
-	        // Scroll main menu
-	        js.executeScript("arguments[0].scrollTop = arguments[0].scrollHeight", menuContainer);
-	        Thread.sleep(3000);
+	        List<WebElement> links = driver.findElements(PRACTICE_MANAGER_LINK);
+	        if (links.isEmpty()) {
+	            return false;
+	        }
 
-	        // Click Practice Tools
-	        WebElement practiceToolsBtn = wait.until(
-	            ExpectedConditions.elementToBeClickable(
-	                By.xpath("//button[@aria-controls='practice-tools-sub-menu']")
-	            )
-	        );
-	        practiceToolsBtn.click();
-
-	        // Wait for Practice Manager
-	        WebElement practiceManager = wait.until(
-	            ExpectedConditions.presenceOfElementLocated(
-	                By.xpath("//span[normalize-space()='Practice Manager']")
-	            )
-	        );
-
-	        // 🔑 Scroll Practice Manager into view
-	        js.executeScript("arguments[0].scrollIntoView({block:'center'});", practiceManager);
-
-	        // 🔑 Click using JS (more reliable for hidden menu items)
-	        js.executeScript("arguments[0].click();", practiceManager);
+	        js.executeScript("arguments[0].scrollIntoView({block:'center'});", links.get(0));
+	        js.executeScript("arguments[0].click();", links.get(0));
+	        return true;
 
 	    } catch (Exception e) {
-	        throw new RuntimeException("Failed to click Practice Manager", e);
+	        // The menu has changed shape; the address below is the way in.
+	        return false;
 	    }
 	}
 
 
 	
+	/**
+	 * Moves to the tab Practice Manager opened.
+	 *
+	 * <p>The old menu entry opened a second tab. Opening the address directly does
+	 * not, so when there is only one tab this stays where it is instead of failing.
+	 */
 	public void switchingTabs() {
 		ArrayList<String> tabs = new ArrayList<>(DriverManager.getDriver().getWindowHandles());
-		DriverManager.getDriver().switchTo().window(tabs.get(1));
+
+		if (tabs.size() < 2) {
+			return;
+		}
+
+		DriverManager.getDriver().switchTo().window(tabs.get(tabs.size() - 1));
 	}
 	public void enterEmailAddress() {
 		wait.until(ExpectedConditions.visibilityOf(emailAdd));
@@ -125,16 +145,6 @@ public class XeroPractiseManagerPage extends MainClass{
 		}
 	}	
 	
-	public void switchportal() throws InterruptedException {
-		Thread.sleep(3000);
-		try {
-			switchPortal_business.click();
-			clickPortal.click();
-			clickConnect.click();
-		}catch(Exception e) {
-			//System.out.println("catch bloclk");
-		}
-	}
 	
 	public void clickCrossButton() {
 		try {

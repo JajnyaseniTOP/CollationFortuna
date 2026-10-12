@@ -35,7 +35,6 @@ public class DriverManager {
     // ─────────────────────────────────────────────────────────────────────────
  
     private static final String PATCHED_DRIVER_DIR  = System.getProperty("java.io.tmpdir") + File.separator + "patched_chromedriver";
-    private static final String PATCHED_DRIVER_PATH = PATCHED_DRIVER_DIR + File.separator + "chromedriver.exe";
  
     /**
      * Downloads the ChromeDriver matching the installed Chrome version,
@@ -44,40 +43,42 @@ public class DriverManager {
      */
     private static void setupPatchedChromeDriver() throws Exception {
  
-        File patchedFile = new File(PATCHED_DRIVER_PATH);
- 
-        // Re-use cached patched driver if it already exists
-        if (patchedFile.exists()) {
-            System.setProperty("webdriver.chrome.driver", PATCHED_DRIVER_PATH);
-            System.out.println("[DriverManager] Using cached patched ChromeDriver.");
-            return;
-        }
- 
-        new File(PATCHED_DRIVER_DIR).mkdirs();
- 
         // ── Step 1: Detect installed Chrome version ───────────────────────
         String chromeVersion = getInstalledChromeVersion();
+        String majorVersion  = chromeVersion.split("\\.")[0];
         System.out.println("[DriverManager] Detected Chrome version: " + chromeVersion);
- 
+
+        // The cache is kept per Chrome major version: Chrome updates itself, and a
+        // driver cached for the old version refuses to start the new one.
+        String versionDir  = PATCHED_DRIVER_DIR + File.separator + majorVersion;
+        File   patchedFile = new File(versionDir + File.separator + "chromedriver.exe");
+
+        if (patchedFile.exists()) {
+            System.setProperty("webdriver.chrome.driver", patchedFile.getPath());
+            System.out.println("[DriverManager] Using cached patched ChromeDriver for Chrome " + majorVersion + ".");
+            return;
+        }
+
+        new File(versionDir).mkdirs();
+
         // ── Step 2: Download matching ChromeDriver ────────────────────────
-        String majorVersion   = chromeVersion.split("\\.")[0];
         String downloadUrl    = getChromeDriverDownloadUrl(majorVersion);
-        File   zipFile        = new File(PATCHED_DRIVER_DIR + File.separator + "chromedriver.zip");
- 
+        File   zipFile        = new File(versionDir + File.separator + "chromedriver.zip");
+
         System.out.println("[DriverManager] Downloading ChromeDriver from: " + downloadUrl);
         downloadFile(downloadUrl, zipFile);
- 
+
         // ── Step 3: Unzip ─────────────────────────────────────────────────
-        File rawDriver = unzipChromeDriver(zipFile, PATCHED_DRIVER_DIR);
- 
+        File rawDriver = unzipChromeDriver(zipFile, versionDir);
+
         // ── Step 4: Patch binary (replace "cdc_" marker) ──────────────────
         patchChromeDriverBinary(rawDriver, patchedFile);
- 
+
         // ── Step 5: Make executable (Linux/Mac) ───────────────────────────
         patchedFile.setExecutable(true);
- 
-        System.setProperty("webdriver.chrome.driver", PATCHED_DRIVER_PATH);
-        System.out.println("[DriverManager] Patched ChromeDriver ready at: " + PATCHED_DRIVER_PATH);
+
+        System.setProperty("webdriver.chrome.driver", patchedFile.getPath());
+        System.out.println("[DriverManager] Patched ChromeDriver ready at: " + patchedFile.getPath());
     }
  
     /** Reads Chrome version from the Windows registry. */
@@ -266,6 +267,13 @@ public class DriverManager {
             prefs.put("profile.default_content_setting_values.notifications", 2);
             prefs.put("credentials_enable_service", false);
             prefs.put("profile.password_manager_enabled", false);
+
+            // Send ATO statement PDFs straight to disk instead of Chrome's built-in viewer
+            prefs.put("download.default_directory", getDownloadDirectory());
+            prefs.put("download.prompt_for_download", false);
+            prefs.put("download.directory_upgrade", true);
+            prefs.put("plugins.always_open_pdf_externally", true);
+            prefs.put("profile.default_content_settings.popups", 0);
  
             // ── Chrome options ────────────────────────────────────────────
             ChromeOptions options = new ChromeOptions();
@@ -326,6 +334,19 @@ public class DriverManager {
         }
     }
  
+    /**
+     * Folder the browser drops downloaded ATO statements into. Kept separate from
+     * the main Downloads folder so a freshly-downloaded statement can be spotted
+     * reliably by comparing the folder contents before and after the click.
+     */
+    public static String getDownloadDirectory() {
+        File directory = new File(System.getProperty("user.home") + File.separator + "Downloads", "ATO Statements");
+        if (!directory.exists()) {
+            directory.mkdirs();
+        }
+        return directory.getAbsolutePath();
+    }
+
     public static WebDriver getDriver() {
         return driver;
     }

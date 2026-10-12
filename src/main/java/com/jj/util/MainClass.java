@@ -50,22 +50,57 @@ public class MainClass {
 		DriverManager.setDriver(browser);
 	}
 
+	/*====================Credentials===================================*/
+
+	/**
+	 * Reads a setting from a JVM system property, falling back to an environment
+	 * variable of the same name.
+	 *
+	 * <p>The environment variable is usually the easier of the two: it is set once on
+	 * the machine, rather than added to every run configuration.
+	 *
+	 * @return the value, or an empty string when neither is set
+	 */
+	public static String setting(String name) {
+		String value = System.getProperty(name);
+		if (value == null || value.trim().isEmpty()) {
+			value = System.getenv(name);
+		}
+		return value == null ? "" : value.trim();
+	}
+
+	/** Same as {@link #setting}, with a default for values that are not secret. */
+	public static String settingOrDefault(String name, String fallback) {
+		String value = setting(name);
+		return value.isEmpty() ? fallback : value;
+	}
+
+	/**
+	 * Reads a required credential, failing with instructions rather than letting the
+	 * run get as far as the login form with nothing to type into it.
+	 */
+	public static String requiredSetting(String name) {
+		String value = setting(name);
+		if (value.isEmpty()) {
+			throw new IllegalStateException("Missing " + name + ". Set it as an environment variable "
+					+ "named " + name + ", or pass -D" + name + "=... to the JVM.");
+		}
+		return value;
+	}
+
 	/*====================Set Properties===================================*/
 
 	public void setProperties() {
-		String configuredClientName = System.getProperty("CLIENT_NAME");
-		if (configuredClientName != null && !configuredClientName.trim().isEmpty()) {
-			clientName = configuredClientName.trim();
-		}
-		ATO_USER_NAME=System.getProperty("ATO_Id");
-		XERO_USER_NAME=System.getProperty("XERO_Id");
-		XERO_PASSWORD=System.getProperty("XERO_Password");
-		XERO_SECURITY_QUEST1=System.getProperty("Security_Question_1");
-		XERO_SECURITY_ANS1=System.getProperty("Security_Answer_1");
-		XERO_SECURITY_QUEST2=System.getProperty("Security_Question_2");
-		XERO_SECURITY_ANS2=System.getProperty("Security_Answer_2");
-		XERO_SECURITY_QUEST3=System.getProperty("Security_Question_3");
-		XERO_SECURITY_ANS3=System.getProperty("Security_Answer_3");
+		clientName = settingOrDefault("CLIENT_NAME", clientName);
+		ATO_USER_NAME=setting("ATO_Id");
+		XERO_USER_NAME=setting("XERO_Id");
+		XERO_PASSWORD=setting("XERO_Password");
+		XERO_SECURITY_QUEST1=setting("Security_Question_1");
+		XERO_SECURITY_ANS1=setting("Security_Answer_1");
+		XERO_SECURITY_QUEST2=setting("Security_Question_2");
+		XERO_SECURITY_ANS2=setting("Security_Answer_2");
+		XERO_SECURITY_QUEST3=setting("Security_Question_3");
+		XERO_SECURITY_ANS3=setting("Security_Answer_3");
 	}
 
 	/*====================Launch Site===================================*/

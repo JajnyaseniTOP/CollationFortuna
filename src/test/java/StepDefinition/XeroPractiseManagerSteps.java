@@ -25,7 +25,8 @@ public class XeroPractiseManagerSteps {
 		practise.switchingTabs();
 //		practise.enterEmailAddress();
 //		practise.enterContinue();
-		practise.switchportal();
+		// No portal switch here any more — FindJob picks the practice from the job
+		// number (KPF to FUT, J to FABA) once the job code is known.
 	}
 	@Then("bot creating excel sheet")
 	public void bot_creating_excel() {
