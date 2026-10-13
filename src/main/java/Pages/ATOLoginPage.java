@@ -394,6 +394,160 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
 		return downloaded;
 	}
 
+	/*==================== Accounts summary -> Income tax row -> payment slip (ITR) ====================*/
+
+	private static final String[] PAYMENT_SLIP_KEYS = {"payment slip"};
+
+	/**
+	 * Saves the client's income tax payment slip, for an ITR whose estimated position
+	 * is payable.
+	 *
+	 * <p>Same Accounts summary the BAS statement comes from, but the other end of the
+	 * row: BAS opens the account by the name on the left, while the payment slip is
+	 * behind the link on the right-hand side of the Income tax row.
+	 *
+	 * <p>Used by the ITR flow only. Nothing in the BAS statement download calls it.
+	 *
+	 * @return the name of the file saved into the ATO statements folder, or null when
+	 *         no slip could be produced — the page is captured so the step that failed
+	 *         can be seen
+	 */
+	public String downloadIncomeTaxPaymentSlip(String clientName) throws InterruptedException {
+		if (clientName == null || clientName.trim().isEmpty()) {
+			throw new IllegalArgumentException("Client name must not be empty");
+		}
+
+		WebDriver driver = DriverManager.getDriver();
+		WebDriverWait atoWait = searchAndOpenClient(clientName);
+
+		try {
+			openAccountsSummary(atoWait);
+
+			Set<String> downloadsBefore = snapshotDownloads();
+			Set<String> windowsBefore = new HashSet<>(driver.getWindowHandles());
+			String summaryWindow = driver.getWindowHandle();
+
+			WebElement rightHandLink = findRightHandLinkInIncomeTaxRow();
+			System.out.println("Income tax row, right-hand link: '" + linkLabel(rightHandLink) + "'");
+			clickWithJs(rightHandLink);
+			Thread.sleep(4000);
+
+			// The right-hand link may be the slip itself or lead to a page that offers
+			// it; if a "payment slip" control shows up, that is the one to press.
+			String newFile = waitForNewDownload(downloadsBefore, Duration.ofSeconds(8));
+			if (newFile == null) {
+				followNewWindow(windowsBefore);
+				try {
+					WebElement slipControl = findInShadowDom(new WebDriverWait(driver, Duration.ofSeconds(10)),
+							PAYMENT_SLIP_KEYS, "a, button, [role='button'], [role='link']");
+					System.out.println("  pressing '" + linkLabel(slipControl) + "'");
+					clickWithJs(slipControl);
+					Thread.sleep(4000);
+					newFile = waitForNewDownload(downloadsBefore, Duration.ofSeconds(8));
+				} catch (TimeoutException e) {
+					System.out.println("  no separate 'payment slip' control — taking this page as the slip.");
+				}
+			}
+
+			if (newFile != null) {
+				closeExtraWindows(windowsBefore, summaryWindow);
+				return renameDownload(newFile, clientName, "Payment slip");
+			}
+
+			// No file arrived, so the slip is a page: render it to PDF, the same way
+			// the activity statement is saved.
+			followNewWindow(windowsBefore);
+			System.out.println("  payment slip view: " + driver.getCurrentUrl());
+
+			String saved = savePageAsPdf(clientName, "Payment slip");
+			closeExtraWindows(windowsBefore, summaryWindow);
+
+			if (saved == null) {
+				System.out.println("No payment slip produced for " + clientName);
+			}
+			return saved;
+
+		} catch (Exception e) {
+			DomCapture capture = new DomCapture();
+			capture.capture(driver, "ato-payment-slip");
+			System.out.println("Unable to download the payment slip: " + e.getMessage());
+			System.out.println("  page captured to: " + capture.getFolder());
+			return null;
+		}
+	}
+
+	/**
+	 * The link furthest to the right in the Accounts summary's Income tax row.
+	 *
+	 * <p>Picked by position rather than by wording: the account name on the left is
+	 * also a link, and it is the one that must not be clicked here. A link that
+	 * carries the account's own name is never taken.
+	 */
+	private WebElement findRightHandLinkInIncomeTaxRow() {
+		String script = Dom.DEEP_TEXT
+				+ "const clean=v=>(v||'').replace(/\\s+/g,' ').trim().toLowerCase();"
+				+ "const visible=el=>el.getClientRects().length>0;"
+				+ "function deepAll(root,sel,out){"
+				+ "for(const el of root.querySelectorAll(sel))out.push(el);"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot)deepAll(el.shadowRoot,sel,out);"
+				+ "return out;}"
+				// The tightest row that mentions income tax — an outer wrapper can carry
+				// the whole table's text and would offer every account's links.
+				+ "let row=null;"
+				+ "for(const candidate of deepAll(document,\"[role='row'],tr,ng-com-table-row,com-table-tr\",[])){"
+				+ "if(!visible(candidate))continue;"
+				+ "const text=clean(deepText(candidate));"
+				+ "if(!text.includes('income tax'))continue;"
+				+ "if(!row||text.length<clean(deepText(row)).length)row=candidate;}"
+				+ "if(!row)return null;"
+				+ "let best=null;let bestLeft=-1;"
+				+ "for(const link of deepAll(row,\"a,button,[role='link'],[role='button']\",[])){"
+				+ "if(!visible(link))continue;"
+				+ "if(clean(deepText(link)).includes('income tax'))continue;"
+				+ "const left=link.getBoundingClientRect().left;"
+				+ "if(left>bestLeft){best=link;bestLeft=left;}}"
+				+ "return best;";
+
+		return new WebDriverWait(DriverManager.getDriver(), Duration.ofSeconds(30))
+				.until(browser -> (WebElement) ((JavascriptExecutor) browser).executeScript(script));
+	}
+
+	/** What a link says, for the log: its text, or failing that its aria-label or title. */
+	private String linkLabel(WebElement link) {
+		try {
+			Object label = ((JavascriptExecutor) DriverManager.getDriver()).executeScript(
+					Dom.DEEP_TEXT + "const el=arguments[0];"
+					+ "return (deepText(el)||el.getAttribute('aria-label')||el.getAttribute('title')||'')"
+					+ ".replace(/\\s+/g,' ').trim();", link);
+			return String.valueOf(label);
+		} catch (Exception e) {
+			return "";
+		}
+	}
+
+	/** Moves to a tab the last click opened, if it opened one. */
+	private void followNewWindow(Set<String> windowsBefore) throws InterruptedException {
+		WebDriver driver = DriverManager.getDriver();
+		Set<String> opened = new HashSet<>(driver.getWindowHandles());
+		opened.removeAll(windowsBefore);
+		if (!opened.isEmpty() && !opened.contains(driver.getWindowHandle())) {
+			driver.switchTo().window(opened.iterator().next());
+			Thread.sleep(2000);
+		}
+	}
+
+	/** Closes any tab the slip opened and returns to the ATO tab the run keeps signed in. */
+	private void closeExtraWindows(Set<String> windowsBefore, String returnTo) {
+		WebDriver driver = DriverManager.getDriver();
+		for (String handle : new HashSet<>(driver.getWindowHandles())) {
+			if (!windowsBefore.contains(handle)) {
+				driver.switchTo().window(handle);
+				driver.close();
+			}
+		}
+		driver.switchTo().window(returnTo);
+	}
+
 	private void openAccountsSummary(WebDriverWait atoWait) throws InterruptedException {
 		atoWait.until(ExpectedConditions.elementToBeClickable(ACCOUNTS_AND_PAYMENTS)).click();
 		Thread.sleep(1000);

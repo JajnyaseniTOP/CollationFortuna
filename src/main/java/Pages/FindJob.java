@@ -1050,10 +1050,66 @@ public class FindJob extends MainClass {
 			extractClientDetailLegacy();
 		} else {
 			extractClientDetail();
-			
+
 		}
-		
+
 	}
-	
+
+	/*====================ITR jobs===================================*/
+
+	/**
+	 * Opens an income tax return job and reads who its client is.
+	 *
+	 * <p>The same route to the job and its client as {@link #switchPortalByPrefix},
+	 * without anything that belongs to a BAS: no period is read out of the job name and
+	 * the activity statements under Tax Returns are not opened. An ITR's estimated
+	 * position comes from the ITR document in the client folder instead.
+	 *
+	 * <p>Separate from the BAS method on purpose, so neither can change the other.
+	 */
+	public static void openItrJob(String input) throws InterruptedException {
+		focusXeroWindow();
+
+		driver.get(PRACTICE_MANAGER_HOME);
+		new WebDriverWait(driver, Duration.ofSeconds(30)).until(
+				d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
+		System.out.println("Practice Manager ready at: " + driver.getCurrentUrl());
+
+		if (input != null && input.toUpperCase(Locale.ENGLISH).startsWith("KPF")) {
+			switchportal();
+		} else {
+			switchportal2();
+		}
+
+		clickjoblinks(input);
+
+		extractedJobNo = extractText(jobNo, "Job No.", "No Job");
+		clientName     = extractText(Client_Name, "Client Name", "No cleintName");
+		jobName        = extractText(Job_Name, "Job Name", "");
+		System.out.println(">>> ITR job: " + extractedJobNo + " - " + jobName);
+
+		// Cleared so a field the client page does not show cannot carry over from the
+		// job before this one.
+		clientnamecode = "No Value";
+		groupName      = "No GroupName";
+		internalteam   = "No Value";
+		cientCode      = "No Value";
+
+		clickOnClientName();
+
+		if (driver.getCurrentUrl().contains("clientview.aspx")) {
+			System.out.println("Legacy client page — only the client name from the job is available.");
+			return;
+		}
+
+		Thread.sleep(1000);
+		clientnamecode = extractText(client_name, "Client Name", "No Value");
+		groupName      = extractText(client_GroupName, "Group Name", "No GroupName");
+		internalteam   = extractInternalTeam();
+		cientCode      = extractText(client_code, "Client Code", "No Value");
+		System.out.println(">>> ITR client: " + clientnamecode + " (" + cientCode + "), group '" + groupName
+				+ "', team '" + internalteam + "'");
+	}
+
 
 }
