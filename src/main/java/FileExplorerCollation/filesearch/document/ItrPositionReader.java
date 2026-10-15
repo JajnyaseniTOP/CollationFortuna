@@ -103,6 +103,11 @@ public class ItrPositionReader {
             return refund;
         }
 
+        /** As printed on the return, e.g. "1,165.00"; null when it could not be read. */
+        public String getAmount() {
+            return amount;
+        }
+
         /**
          * True when there is something for the client to pay. A return that comes out
          * at exactly nil is worded "Amount payable" but needs no payment slip.

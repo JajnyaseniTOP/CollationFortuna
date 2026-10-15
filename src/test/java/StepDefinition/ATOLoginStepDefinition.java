@@ -3,6 +3,7 @@ package StepDefinition;
 import Driver_manager.DriverManager;
 import Pages.ATOLoginPage;
 import Pages.FindJob;
+import com.jj.collation.JobType;
 import com.jj.util.ClientExcel;
 import com.jj.util.MainClass;
 import io.cucumber.java.en.Given;
@@ -35,12 +36,18 @@ public class ATOLoginStepDefinition {
 
     @Given("the bot opens the ATO portal for the job's client")
     public void bot_opens_the_ato_portal_for_the_jobs_client() throws InterruptedException {
+        if (!JobType.BAS.isCurrent("BAS: open the ATO portal")) {
+            return;
+        }
         atoLoginPage.openAtoPortal();
         atoLoginPage.login(System.getProperty("ATO_Id"));
     }
 
     @When("the bot reads the BAS lodgement cycle")
     public void bot_reads_the_bas_lodgement_cycle() throws InterruptedException {
+        if (!JobType.BAS.isCurrent("BAS: read the lodgement cycle")) {
+            return;
+        }
         String clientName = requireClientName();
 
         FindJob.atoQuarter = atoLoginPage.findWithholdingRegistration(clientName);
@@ -52,6 +59,9 @@ public class ATOLoginStepDefinition {
 
     @When("the bot downloads the ATO statements when the estimated position is payable")
     public void bot_downloads_ato_statements_when_estimated_position_is_payable() throws InterruptedException {
+        if (!JobType.BAS.isCurrent("BAS: download the ATO statements")) {
+            return;
+        }
         if (!FindJob.estimatedPositionPayable) {
             System.out.println("Estimated tax position is not payable — skipping the ATO statement download.");
             return;
@@ -70,6 +80,9 @@ public class ATOLoginStepDefinition {
 
     @Then("the bot writes the ClientData rows for the BAS period")
     public void bot_writes_the_clientdata_rows_for_the_bas_period() {
+        if (!JobType.BAS.isCurrent("BAS: write the ClientData rows and collate")) {
+            return;
+        }
         FindJob.writeClientDataRows();
     }
 

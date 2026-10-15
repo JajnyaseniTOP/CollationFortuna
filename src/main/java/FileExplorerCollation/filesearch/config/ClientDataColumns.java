@@ -53,14 +53,20 @@ public final class ClientDataColumns {
     /** R - financial quarter, e.g. "Q1 2027". Its year picks the year folder. */
     public static final int FINANCIAL_QUARTER = 17;
 
-    /** S - written by this project: whether the client folder was located. */
-    public static final int CLIENT_FOLDER_STATUS = 18;
+    /** S - the client's Business structure on XPM, e.g. "Individual". Written on a job's first row. */
+    public static final int BUSINESS_STRUCTURE = 18;
+
+    /** T - "BAS" or "ITR": which collation the job got. */
+    public static final int COLLATION_TYPE = 19;
+
+    /** U - written by this project: whether the client folder was located. */
+    public static final int CLIENT_FOLDER_STATUS = 20;
 
     /** Header text written above {@link #CLIENT_FOLDER_STATUS}. */
     public static final String CLIENT_FOLDER_STATUS_HEADER = "Client Folder Status";
 
-    /** T - written by this project: whether the AS file was located. */
-    public static final int AS_FILE_STATUS = 19;
+    /** V - written by this project: whether the AS file was located. */
+    public static final int AS_FILE_STATUS = 21;
 
     /** Header text written above {@link #AS_FILE_STATUS}. */
     public static final String AS_FILE_STATUS_HEADER = "AS File Status";

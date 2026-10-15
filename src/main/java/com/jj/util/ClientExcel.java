@@ -41,6 +41,16 @@ public class ClientExcel extends MainClass {
 			+ java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
 			+ ".xls";
 	private static final DateTimeFormatter MONTH_FORMATTER = DateTimeFormatter.ofPattern("MMM yyyy");
+
+	/** Column S, straight after Financial Quarter. */
+	private static final int BUSINESS_STRUCTURE_COLUMN = 18;
+	private static final String BUSINESS_STRUCTURE_HEADER = "Business Structure";
+
+	/** Column T: which collation the job got, so the sheet alone shows BAS jobs from ITR jobs. */
+	private static final int COLLATION_TYPE_COLUMN = 19;
+	private static final String COLLATION_TYPE_HEADER = "Collation Type";
+	private static final String COLLATION_TYPE_BAS = "BAS";
+	private static final String COLLATION_TYPE_ITR = "ITR";
 	private static final Pattern QUARTER_RANGE_PATTERN = Pattern.compile(
 			"(?i)Q([1-4])\\s*(\\d{4})\\s*-\\s*Q([1-4])\\s*(\\d{4})");
 
@@ -76,7 +86,7 @@ public class ClientExcel extends MainClass {
 		System.out.println("Creating this run's workbook: " + file.getAbsolutePath());
 		workbook = new HSSFWorkbook();
 		sheet = workbook.createSheet("Client Data");
-		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter"};
+		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter", BUSINESS_STRUCTURE_HEADER, COLLATION_TYPE_HEADER};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);
@@ -127,6 +137,8 @@ public class ClientExcel extends MainClass {
 				header.createCell(15).setCellValue("Payble/Refund");
 				header.createCell(16).setCellValue("Amount");
 				header.createCell(17).setCellValue("Financial Quarter");
+				header.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(BUSINESS_STRUCTURE_HEADER);
+				header.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_HEADER);
 			}
 			migrateFinancialQuarterColumn();
 			int pendingAtoRow = findPendingAtoRow();
@@ -152,6 +164,12 @@ public class ClientExcel extends MainClass {
 	}
 
 	public void insertData(String jobNo, String atoQuarter, String coverLetterNotes, String currentDate,String clientname, String clientNamexpm,String clientName,String GroupName,String internalTeam,String quarters, Map<String, String> payableByMonth, Map<String, String> amountPayableByMonth) {
+		insertData(jobNo, atoQuarter, coverLetterNotes, currentDate, clientname, clientNamexpm, clientName,
+				GroupName, internalTeam, quarters, payableByMonth, amountPayableByMonth, "");
+	}
+
+	/** As above, also writing the client's XPM Business structure (e.g. "Individual") on the job's first row. */
+	public void insertData(String jobNo, String atoQuarter, String coverLetterNotes, String currentDate,String clientname, String clientNamexpm,String clientName,String GroupName,String internalTeam,String quarters, Map<String, String> payableByMonth, Map<String, String> amountPayableByMonth, String businessStructure) {
 		if (workbook == null || sheet == null) {
 			createEmptyExcelSheet();
 		}
@@ -179,6 +197,7 @@ public class ClientExcel extends MainClass {
 				row.createCell(7).setCellValue(GroupName);
 				row.createCell(8).setCellValue(internalTeam);
 				createCombinedColumns(row);
+				row.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(businessStructure == null ? "" : businessStructure);
 				firstPeriod = false;
 			}
 			row.createCell(13).setCellValue(period.label);
@@ -189,11 +208,54 @@ public class ClientExcel extends MainClass {
 			String amountPayable = amountPayableByMonth.get(figureMonth);
 			row.createCell(16).setCellValue(amountPayable == null ? "Not Found" : amountPayable);
 			row.createCell(17).setCellValue(period.financialQuarter);
+			row.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_BAS);
 
 			// Saved per row rather than once at the end: a job that fails part way
 			// through then still leaves everything it did manage on disk.
 			saveWorkbook(getTargetFile());
 		}
+	}
+
+	/**
+	 * Writes the one row an ITR job gets, marked "ITR" in the Collation Type column.
+	 *
+	 * <p>The columns line up with the BAS rows so the sheet reads the same way for
+	 * both: Status says whether the 2026_ITR file was found, and Payable/Refund and
+	 * Amount come off that file. Quarters, ATO quarter and Financial Quarter stay
+	 * blank — an income tax return has none of them.
+	 */
+	public void insertItrRow(String jobNo, String currentDate, String clientname, String clientNamexpm,
+			String clientCode, String groupName, String internalTeam, String businessStructure,
+			boolean itrFileFound, String payableOrRefund, String amount) {
+		if (workbook == null || sheet == null) {
+			createEmptyExcelSheet();
+		}
+
+		Row row = sheet.getRow(currentRowNum);
+		if (row == null) {
+			row = sheet.createRow(currentRowNum);
+		}
+		currentRowNum++;
+
+		row.createCell(0).setCellValue(jobNo);
+		row.createCell(1).setCellValue("");
+		row.createCell(2).setCellValue("");
+		row.createCell(3).setCellValue(currentDate);
+		row.createCell(4).setCellValue(clientname);
+		row.createCell(5).setCellValue(clientNamexpm);
+		row.createCell(6).setCellValue(clientCode);
+		row.createCell(7).setCellValue(groupName);
+		row.createCell(8).setCellValue(internalTeam);
+		createCombinedColumns(row);
+		row.createCell(13).setCellValue("");
+		row.createCell(14).setCellValue(itrFileFound ? "Found" : "Not Found");
+		row.createCell(15).setCellValue(payableOrRefund == null || payableOrRefund.isEmpty() ? "Not Found" : payableOrRefund);
+		row.createCell(16).setCellValue(amount == null || amount.isEmpty() ? "Not Found" : amount);
+		row.createCell(17).setCellValue("");
+		row.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(businessStructure == null ? "" : businessStructure);
+		row.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_ITR);
+
+		saveWorkbook(getTargetFile());
 	}
 
 	/*====================How many rows the BAS period needs===================================*/

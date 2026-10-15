@@ -44,6 +44,8 @@ public class FindJob extends MainClass {
 	public static String clientnamecode = "";
 	public static String groupName = "";
 	public static String cientCode = "";
+	/** The client's Business structure on XPM, e.g. "Individual", "Company", "Trust". */
+	public static String businessStructure = "";
 	public static String startQuarter = "Q4";
 	public static String endQuarter = "Q3";
 	public static String startingYear = "2026";
@@ -159,6 +161,9 @@ public class FindJob extends MainClass {
 	private static WebElement client_name;
 	@FindBy(xpath="//div[@data-automationid='information-item-clientReferenceCode--value']")
 	private static WebElement client_code;
+
+	@FindBy(xpath="//div[@data-automationid='information-item-business-structure--value']")
+	private static WebElement client_BusinessStructure;
 
 	@FindBy(xpath="//div[@data-automationid='group-item--group-container']//a[contains(@class,'xui-pill--content')]")
 	private static WebElement client_GroupName;
@@ -427,6 +432,24 @@ public class FindJob extends MainClass {
 	 * link class, so a build-generated class name cannot break it.
 	 */
 	public static void clickjoblinks(String jobnumber) throws InterruptedException {
+		clickWithJs(searchJobList(jobnumber));
+
+		// Wait for the job page to paint. Reading the fields on a half-loaded page is
+		// what made Job No., Cover Letter Notes and Client all come back empty.
+		//
+		// The page sometimes stops at the Xero navigation shell with the job detail
+		// never arriving — the right job, the right URL, no table. Waiting longer does
+		// not help; reloading does, the same as the ATO agent home.
+		awaitJobDetail();
+		System.out.println("Job open at: " + driver.getCurrentUrl());
+	}
+
+	/**
+	 * Opens the job manager and searches for the job.
+	 *
+	 * @return the job number's link in the results, not yet clicked
+	 */
+	private static WebElement searchJobList(String jobnumber) throws InterruptedException {
 		WebDriverWait navWait = new WebDriverWait(driver, Duration.ofSeconds(20));
 
 		// Clicked through JavaScript: the dropdown entries sit in the DOM before the
@@ -444,16 +467,53 @@ public class FindJob extends MainClass {
 		Thread.sleep(2000);
 
 		By jobLink = By.xpath("//a[normalize-space()=" + xpathLiteral(jobnumber) + "]");
-		clickWithJs(navWait.until(ExpectedConditions.presenceOfElementLocated(jobLink)));
+		return navWait.until(ExpectedConditions.presenceOfElementLocated(jobLink));
+	}
 
-		// Wait for the job page to paint. Reading the fields on a half-loaded page is
-		// what made Job No., Cover Letter Notes and Client all come back empty.
-		//
-		// The page sometimes stops at the Xero navigation shell with the job detail
-		// never arriving — the right job, the right URL, no table. Waiting longer does
-		// not help; reloading does, the same as the ATO agent home.
-		awaitJobDetail();
-		System.out.println("Job open at: " + driver.getCurrentUrl());
+	/**
+	 * Reads the job's Name from the job manager's search results — "2026 Income Tax
+	 * Return", "Client Name Q3 27 BAS" — which is what decides BAS or ITR.
+	 *
+	 * <p>The Name cell is found by its column header rather than by position, so a
+	 * column added or moved in the list cannot shift it. If the header cannot be
+	 * matched, the whole row's text is returned instead and the log says so.
+	 */
+	public static String readJobNameFromJobList(String input) throws InterruptedException {
+		focusXeroWindow();
+
+		driver.get(PRACTICE_MANAGER_HOME);
+		new WebDriverWait(driver, Duration.ofSeconds(30)).until(
+				d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
+
+		if (input != null && input.toUpperCase(Locale.ENGLISH).startsWith("KPF")) {
+			switchportal();
+		} else {
+			switchportal2();
+		}
+
+		WebElement jobLink = searchJobList(input);
+
+		String script =
+				"const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
+				+ "const row=arguments[0].closest(\"tr,[role='row']\");"
+				+ "if(!row)return null;"
+				+ "const cells=[...row.querySelectorAll(\"td,[role='cell'],[role='gridcell']\")]"
+				+ ".filter(c=>c.closest(\"tr,[role='row']\")===row);"
+				+ "const grid=row.closest(\"table,[role='grid'],[role='table']\");"
+				+ "const headers=grid?[...grid.querySelectorAll(\"th,[role='columnheader']\")]:[];"
+				+ "const index=headers.findIndex(h=>/^name\\b/i.test(clean(h.textContent)));"
+				+ "if(index>=0&&index<cells.length)return clean(cells[index].textContent);"
+				+ "return '\\u0000'+clean(row.textContent);";
+
+		Object result = ((JavascriptExecutor) driver).executeScript(script, jobLink);
+		String name = result == null ? "" : String.valueOf(result);
+
+		if (name.startsWith("\u0000")) {
+			name = name.substring(1);
+			System.out.println("!! No Name column header found — deciding from the whole row: " + name);
+		}
+		System.out.println(">>> " + input + " job name: " + name);
+		return name;
 	}
 
 	private static void extractClientDetailsInJobPage() throws InterruptedException {
@@ -511,7 +571,9 @@ public class FindJob extends MainClass {
 		groupName      = extractText(client_GroupName, "Group Name", "No GroupName");
 		internalteam   = extractInternalTeam();
 		cientCode   = extractText(client_code, "Internal Team", "No Value");
+		businessStructure = extractText(client_BusinessStructure, "Business Structure", "No Value");
 		System.out.println(">>> Extracted Internal Team: '" + internalteam + "'");
+		System.out.println(">>> Extracted Business Structure: '" + businessStructure + "'");
 //		taxReturn.click();
 //		itr.click();
 //		
@@ -568,7 +630,7 @@ public class FindJob extends MainClass {
 		// The job's own name carries its period, so pass that rather than a fixed range.
 		creator.insertData(extractedJobNo, atoQuarter, coverLetterNotes, currentDate, clientName, clientnamecode,
 				cientCode, groupName, internalteam, jobName, lastTaxReturnValues.payableByMonth,
-				lastTaxReturnValues.amountPayableByMonth);
+				lastTaxReturnValues.amountPayableByMonth, businessStructure);
 
 		collateIntoClientFolders();
 	}
@@ -613,6 +675,7 @@ public class FindJob extends MainClass {
 		groupName      = "No Value";
 		internalteam   = "No Value";
 		cientCode      =  "No Value";
+		businessStructure = "No Value";
 //		taxReturnpayble   = "No Value";
 //		taxamount   = "No Value";
 
@@ -1058,6 +1121,51 @@ public class FindJob extends MainClass {
 	/*====================ITR jobs===================================*/
 
 	/**
+	 * The job's Description, in either job page layout. It is where the Ignition
+	 * proposal link sits, when the job has one.
+	 */
+	private static final By JOB_DESCRIPTION = By.xpath(
+			"//span[contains(@class,'sdl-flex-layout__control__label') and normalize-space()='Description']/following-sibling::*[1]"
+			+ " | //td[normalize-space()='Description:']/following-sibling::td[1]");
+
+	/** The Ignition proposal link in the ITR job's Description, or null when there is none. */
+	public static String ignitionLink = null;
+
+	/** False when the Description could not be read at all, so "no link" is not certain. */
+	public static boolean descriptionRead = false;
+
+	/**
+	 * Looks for the Ignition proposal link under the job's Description, e.g.
+	 * https://go.ignitionapp.com/clients/cli_…/proposals/prop_…
+	 *
+	 * <p>The link differs for every client, so it is recognised by where it points —
+	 * ignitionapp.com — not by its exact address. Both the anchors' targets and the
+	 * Description's text are checked, in case the link is written out without being
+	 * made clickable.
+	 */
+	private static void readIgnitionLink() {
+		ignitionLink = null;
+		descriptionRead = false;
+
+		List<WebElement> found = driver.findElements(JOB_DESCRIPTION);
+		if (found.isEmpty()) {
+			System.out.println("!! No Description on the job page — cannot tell whether it has an Ignition link.");
+			return;
+		}
+		descriptionRead = true;
+
+		Object link = ((JavascriptExecutor) driver).executeScript(
+				"const el=arguments[0];"
+				+ "for(const a of el.querySelectorAll('a[href]'))"
+				+ "if(/ignitionapp\\.com/i.test(a.href))return a.href;"
+				+ "const m=(el.textContent||'').match(/https?:\\/\\/\\S*ignitionapp\\.com\\S*/i);"
+				+ "return m?m[0]:null;", found.get(0));
+
+		ignitionLink = link == null ? null : String.valueOf(link);
+		System.out.println(">>> Ignition link in the Description: " + (ignitionLink == null ? "none" : ignitionLink));
+	}
+
+	/**
 	 * Opens an income tax return job and reads who its client is.
 	 *
 	 * <p>The same route to the job and its client as {@link #switchPortalByPrefix},
@@ -1083,6 +1191,8 @@ public class FindJob extends MainClass {
 
 		clickjoblinks(input);
 
+		readIgnitionLink();
+
 		extractedJobNo = extractText(jobNo, "Job No.", "No Job");
 		clientName     = extractText(Client_Name, "Client Name", "No cleintName");
 		jobName        = extractText(Job_Name, "Job Name", "");
@@ -1094,6 +1204,7 @@ public class FindJob extends MainClass {
 		groupName      = "No GroupName";
 		internalteam   = "No Value";
 		cientCode      = "No Value";
+		businessStructure = "No Value";
 
 		clickOnClientName();
 
@@ -1102,13 +1213,23 @@ public class FindJob extends MainClass {
 			return;
 		}
 
-		Thread.sleep(1000);
+		// Wait for the details panel rather than a fixed pause. Once the ATO login has
+		// run, the implicit wait is zero, so a field read a moment too early comes back
+		// missing — which is how a run lost the client name and group.
+		try {
+			new WebDriverWait(driver, Duration.ofSeconds(20)).until(ExpectedConditions.presenceOfElementLocated(
+					By.xpath("//div[@data-automationid='information-item-businessName--value']")));
+			Thread.sleep(1000);
+		} catch (TimeoutException e) {
+			System.out.println("Client details did not appear within 20s at " + driver.getCurrentUrl());
+		}
 		clientnamecode = extractText(client_name, "Client Name", "No Value");
 		groupName      = extractText(client_GroupName, "Group Name", "No GroupName");
 		internalteam   = extractInternalTeam();
 		cientCode      = extractText(client_code, "Client Code", "No Value");
+		businessStructure = extractText(client_BusinessStructure, "Business Structure", "No Value");
 		System.out.println(">>> ITR client: " + clientnamecode + " (" + cientCode + "), group '" + groupName
-				+ "', team '" + internalteam + "'");
+				+ "', team '" + internalteam + "', business structure '" + businessStructure + "'");
 	}
 
 

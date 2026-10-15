@@ -25,6 +25,13 @@ public final class ItrPaths {
     /** Copied into every ITR pack unchanged. */
     public static final String NOTES_FOR_SIGNING_FILE = "Notes for Persons Signing Tax Returns.pdf";
 
+    /** Folder holding the engagement letter for ITR jobs with no Ignition link. */
+    public static final String ENGAGEMENT_LETTER_FOLDER =
+            System.getProperty("user.home") + "\\Downloads\\ITR Letters";
+
+    /** Copied into Collation Testing when the job's Description has no Ignition link. */
+    public static final String ENGAGEMENT_LETTER_FILE = "New Engagement Letter 2026-27.docx";
+
     /** What the finished ITR letter is called, e.g. "Cover Letter 2026.docx". */
     public static final String COVER_LETTER_FILE_NAME = "Cover Letter " + ITR_YEAR + ".docx";
 

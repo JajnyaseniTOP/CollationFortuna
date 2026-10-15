@@ -112,6 +112,15 @@ public class ItrCollator {
 	 *                    (or the slip could not be downloaded)
 	 */
 	public ItrOutcome collate(ItrPack pack, Path paymentSlip) {
+		return collate(pack, paymentSlip, false);
+	}
+
+	/**
+	 * @param attachEngagementLetter true when the job's Description has no Ignition
+	 *                               link — the client has not signed up through
+	 *                               Ignition, so the engagement letter goes in the pack
+	 */
+	public ItrOutcome collate(ItrPack pack, Path paymentSlip, boolean attachEngagementLetter) {
 
 		ItrOutcome outcome = new ItrOutcome();
 
@@ -134,6 +143,12 @@ public class ItrCollator {
 					copyInto(paymentSlip, collationFolder, paymentSlip.getFileName().toString()) != null;
 		} else if (payable) {
 			System.out.println("!! Position is payable but no ATO payment slip was saved — collating without it.");
+		}
+
+		if (attachEngagementLetter) {
+			outcome.engagementLetterCopied = copyInto(
+					Paths.get(ItrPaths.ENGAGEMENT_LETTER_FOLDER, ItrPaths.ENGAGEMENT_LETTER_FILE),
+					collationFolder, ItrPaths.ENGAGEMENT_LETTER_FILE) != null;
 		}
 
 		Path letter = coverLetter.createCoverLetter(collationFolder, pack.clientName,
@@ -212,6 +227,7 @@ public class ItrCollator {
 		public boolean notesCopied;
 		public boolean paymentSlipCopied;
 		public boolean finalPdfBuilt;
+		public boolean engagementLetterCopied;
 
 		@Override
 		public String toString() {
@@ -219,6 +235,7 @@ public class ItrCollator {
 					+ ", cover letter " + (coverLetterWritten ? "written" : "NOT written")
 					+ ", signing notes " + (notesCopied ? "copied" : "NOT copied")
 					+ ", ATO payment slip " + (paymentSlipCopied ? "copied" : "not included")
+					+ ", engagement letter " + (engagementLetterCopied ? "copied" : "not included")
 					+ ", final PDF " + (finalPdfBuilt ? "built" : "NOT built");
 		}
 	}
