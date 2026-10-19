@@ -183,15 +183,35 @@ public class ItrFolderSearch {
         return childStartingWith(yearFolder, "yearendwork");
     }
 
-    /** "V1 Deliv\Reports" inside the workpapers folder, or null if either is missing. */
+    /** "V1 Deliv", "V2 Deliv", ... - the number is the version of the deliverables. */
+    private static final java.util.regex.Pattern DELIV_FOLDER =
+            java.util.regex.Pattern.compile("(?i)^\\s*V\\s*(\\d+)\\s*Deliv");
+
+    /**
+     * "Reports" inside the latest deliverables folder - V2 Deliv over V1 Deliv - or
+     * null if there is no deliverables folder or it has no Reports.
+     */
     public Path findReportsFolder(Path workpapersFolder) {
 
-        Path deliverables = childStartingWith(workpapersFolder, "v1deliv");
+        Path deliverables = null;
+        int latestVersion = -1;
+
+        for (Path child : listDirectories(workpapersFolder)) {
+
+            java.util.regex.Matcher version = DELIV_FOLDER.matcher(child.getFileName().toString());
+
+            if (version.find() && Integer.parseInt(version.group(1)) > latestVersion) {
+                latestVersion = Integer.parseInt(version.group(1));
+                deliverables = child;
+            }
+        }
 
         if (deliverables == null) {
-            System.out.println("NO - no 'V1 Deliv' folder in " + workpapersFolder);
+            System.out.println("NO - no 'V1 Deliv' (or later) folder in " + workpapersFolder);
             return null;
         }
+
+        System.out.println("Latest deliverables folder: " + deliverables.getFileName());
 
         Path reports = childStartingWith(deliverables, "report");
 

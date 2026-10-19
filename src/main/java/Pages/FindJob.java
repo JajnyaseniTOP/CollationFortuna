@@ -1128,6 +1128,134 @@ public class FindJob extends MainClass {
 			"//span[contains(@class,'sdl-flex-layout__control__label') and normalize-space()='Description']/following-sibling::*[1]"
 			+ " | //td[normalize-space()='Description:']/following-sibling::td[1]");
 
+	/*====================ITR: final invoice from the job's Financial tab===================================*/
+
+	/** The job's Financial tab, in either layout: a tab cell on jobview.aspx, or a tab/link on the SPA. */
+	private static final By FINANCIAL_TAB = By.xpath(
+			"//td[contains(@class,'Tab')][normalize-space()='Financial']"
+			+ " | //*[self::a or self::button or @role='tab'][normalize-space()='Financial']");
+
+	/** Final invoice numbers found on the job's Financial tab, e.g. "INV-19498"; joined with "; " if several. */
+	public static String finalInvoiceNumbers = "";
+
+	/** Their amounts, in the same order, e.g. "$330.00". */
+	public static String finalInvoiceAmounts = "";
+
+	/** The Financial page is saved for diagnosis once per run, not for every job. */
+	private static boolean financialPageCaptured = false;
+
+	/**
+	 * Opens the job's Financial tab and reads the final invoices from the last
+	 * Invoices table: every row whose Type (the 4th column) says "Final Invoice" gives
+	 * its invoice number and amount. Then goes back to the job's Information tab,
+	 * where the client link is.
+	 *
+	 * <p>The table is found by its headings — the last table with a Type column — and
+	 * its columns by their header text, falling back to the 4th column for Type. If no
+	 * such table is found, the page is captured so the layout can be checked.
+	 */
+	private static void readFinalInvoices() throws InterruptedException {
+		finalInvoiceNumbers = "";
+		finalInvoiceAmounts = "";
+
+		String jobUrl = driver.getCurrentUrl();
+		List<WebElement> tabs = driver.findElements(FINANCIAL_TAB);
+		if (tabs.isEmpty()) {
+			System.out.println("!! No Financial tab on the job page — no final invoice read.");
+			return;
+		}
+
+		clickWithJs(tabs.get(0));
+		Thread.sleep(3000);
+
+		String script =
+				"const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
+				+ "const tables=[...document.querySelectorAll(\"table,[role='grid'],[role='table']\")];"
+				+ "let chosen=null;"
+				+ "for(const t of tables){"
+				+ "const firstRow=t.querySelector(\"thead tr,tr,[role='row']\");"
+				+ "if(!firstRow)continue;"
+				+ "const heads=[...firstRow.querySelectorAll(\"th,td,[role='columnheader']\")].map(c=>clean(c.textContent).toLowerCase());"
+				+ "if(heads.some(h=>h==='type'||h.startsWith('type ')))chosen={t,heads};}"
+				+ "if(!chosen)return null;"
+				+ "const heads=chosen.heads;"
+				+ "let typeIdx=heads.findIndex(h=>h==='type'||h.startsWith('type '));if(typeIdx<0)typeIdx=3;"
+				+ "let numIdx=heads.findIndex(h=>/invoice|number|^no\\.?$|^#/.test(h));if(numIdx<0)numIdx=0;"
+				+ "let amtIdx=heads.findIndex(h=>/amount|total/.test(h));"
+				+ "const out=['HEADERS '+heads.join(' | ')];"
+				+ "const rows=[...chosen.t.querySelectorAll(\"tr,[role='row']\")].slice(1);"
+				+ "for(const r of rows){"
+				+ "const cells=[...r.querySelectorAll(\"td,[role='cell'],[role='gridcell']\")].map(c=>clean(c.textContent));"
+				+ "if(cells.length<=typeIdx)continue;"
+				+ "if(!/final invoice/i.test(cells[typeIdx]))continue;"
+				+ "const amount=amtIdx>=0&&amtIdx<cells.length?cells[amtIdx]:(cells.filter(c=>/\\$?\\d[\\d,]*\\.\\d{2}/.test(c)).pop()||'');"
+				+ "out.push(cells[numIdx]+'\\t'+amount);}"
+				+ "return out.join('\\n');";
+
+		Object result = null;
+		try {
+			result = new WebDriverWait(driver, Duration.ofSeconds(20))
+					.until(d -> ((JavascriptExecutor) d).executeScript(script));
+		} catch (TimeoutException e) {
+			// handled below
+		}
+
+		if (result == null) {
+			// Most jobs have no invoices yet, so the page is saved once per run, not per job.
+			if (!financialPageCaptured) {
+				financialPageCaptured = true;
+				DomCapture capture = new DomCapture();
+				capture.capture(driver, "job-financial-no-invoices-table");
+				System.out.println("No Invoices table with a Type column on the Financial tab. Page captured to: "
+						+ capture.getFolder());
+			} else {
+				System.out.println("No Invoices table with a Type column on the Financial tab.");
+			}
+		} else {
+			List<String> numbers = new ArrayList<>();
+			List<String> amounts = new ArrayList<>();
+			for (String line : String.valueOf(result).split("\n")) {
+				if (line.startsWith("HEADERS ")) {
+					System.out.println("Invoices table columns: " + line.substring(8));
+					continue;
+				}
+				String[] parts = line.split("\t", -1);
+				numbers.add(parts[0].trim());
+				amounts.add(parts.length > 1 ? parts[1].trim() : "");
+			}
+			finalInvoiceNumbers = String.join("; ", numbers);
+			finalInvoiceAmounts = String.join("; ", amounts);
+			System.out.println(">>> Final invoice(s): " + (numbers.isEmpty() ? "none on this job"
+					: finalInvoiceNumbers + "  amount(s): " + finalInvoiceAmounts));
+		}
+
+		// Back to the Information tab, where the client link is
+		driver.get(jobUrl);
+		awaitJobDetail();
+	}
+
+	/** The client's Preferred Name on XPM; blank when the field is empty ("-") or missing. */
+	public static String preferredName = "";
+
+	/**
+	 * A custom field on the XPM client page, found by its label. Custom fields carry a
+	 * GUID in their automation id that differs between practices, so the label is the
+	 * only stable way in — the same approach as Internal Team.
+	 *
+	 * @return the value, or blank when the field is missing or shows "-"
+	 */
+	private static String extractLabelledValue(String label) {
+		By locator = By.xpath("//div[contains(@data-automationid,'--label') and normalize-space()="
+				+ xpathLiteral(label) + "]/following-sibling::div[contains(@data-automationid,'--value')]");
+		List<WebElement> found = driver.findElements(locator);
+		if (found.isEmpty()) {
+			System.out.println(label + " not on the client page.");
+			return "";
+		}
+		String value = found.get(0).getText().trim();
+		return "-".equals(value) ? "" : value;
+	}
+
 	/** The Ignition proposal link in the ITR job's Description, or null when there is none. */
 	public static String ignitionLink = null;
 
@@ -1205,6 +1333,10 @@ public class FindJob extends MainClass {
 		internalteam   = "No Value";
 		cientCode      = "No Value";
 		businessStructure = "No Value";
+		preferredName  = "";
+
+		// Before the client page: the job's own Financial tab, for its final invoice.
+		readFinalInvoices();
 
 		clickOnClientName();
 
@@ -1228,6 +1360,8 @@ public class FindJob extends MainClass {
 		internalteam   = extractInternalTeam();
 		cientCode      = extractText(client_code, "Client Code", "No Value");
 		businessStructure = extractText(client_BusinessStructure, "Business Structure", "No Value");
+		preferredName  = extractLabelledValue("Preferred Name");
+		System.out.println(">>> Preferred Name: '" + preferredName + "'");
 		System.out.println(">>> ITR client: " + clientnamecode + " (" + cientCode + "), group '" + groupName
 				+ "', team '" + internalteam + "', business structure '" + businessStructure + "'");
 	}

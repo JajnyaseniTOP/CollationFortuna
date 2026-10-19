@@ -59,14 +59,35 @@ public final class ClientDataColumns {
     /** T - "BAS" or "ITR": which collation the job got. */
     public static final int COLLATION_TYPE = 19;
 
-    /** U - written by this project: whether the client folder was located. */
-    public static final int CLIENT_FOLDER_STATUS = 20;
+    /** U - ITR jobs: the client's Preferred Name on XPM. */
+    public static final int PREFERRED_NAME = 20;
+
+    /** V - ITR jobs: who the cover letter is addressed to, from the ITR declaration. */
+    public static final int COVER_LETTER_RECIPIENT = 21;
+
+    /** W - ITR jobs: the tax return's due date from the ATO. */
+    public static final int ATO_DUE_DATE = 22;
+
+    /** X - ITR jobs: final invoice number(s) from the job's Financial tab. */
+    public static final int FINAL_INVOICE_NO = 23;
+
+    /** Y - ITR jobs: the final invoice amount(s). */
+    public static final int FINAL_INVOICE_AMOUNT = 24;
+
+    /** Z - ITR jobs: "Yes" when a Fee From Refund authority was prepared. */
+    public static final int FFR_PREPARED = 25;
+
+    /** AA - ITR jobs: the FFR's expected balance, refund minus final invoice. */
+    public static final int FFR_EXPECTED_BALANCE = 26;
+
+    /** AB - written by this project: whether the client folder was located. */
+    public static final int CLIENT_FOLDER_STATUS = 27;
 
     /** Header text written above {@link #CLIENT_FOLDER_STATUS}. */
     public static final String CLIENT_FOLDER_STATUS_HEADER = "Client Folder Status";
 
-    /** V - written by this project: whether the AS file was located. */
-    public static final int AS_FILE_STATUS = 21;
+    /** AC - written by this project: whether the AS file was located. */
+    public static final int AS_FILE_STATUS = 28;
 
     /** Header text written above {@link #AS_FILE_STATUS}. */
     public static final String AS_FILE_STATUS_HEADER = "AS File Status";

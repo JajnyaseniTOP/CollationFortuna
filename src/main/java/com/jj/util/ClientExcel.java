@@ -51,6 +51,26 @@ public class ClientExcel extends MainClass {
 	private static final String COLLATION_TYPE_HEADER = "Collation Type";
 	private static final String COLLATION_TYPE_BAS = "BAS";
 	private static final String COLLATION_TYPE_ITR = "ITR";
+
+	/** Columns U to W: filled for ITR jobs, blank on BAS rows. */
+	private static final int PREFERRED_NAME_COLUMN = 20;
+	private static final int RECIPIENT_NAME_COLUMN = 21;
+	private static final int DUE_DATE_COLUMN = 22;
+	private static final String PREFERRED_NAME_HEADER = "Preferred Name";
+	private static final String RECIPIENT_NAME_HEADER = "Cover Letter Recipient";
+	private static final String DUE_DATE_HEADER = "ATO Due Date";
+
+	/** Columns X and Y: the final invoice from the job's Financial tab (ITR jobs). */
+	private static final int FINAL_INVOICE_NO_COLUMN = 23;
+	private static final int FINAL_INVOICE_AMOUNT_COLUMN = 24;
+	private static final String FINAL_INVOICE_NO_HEADER = "Final Invoice No";
+	private static final String FINAL_INVOICE_AMOUNT_HEADER = "Final Invoice Amount";
+
+	/** Columns Z and AA: whether a Fee From Refund was prepared, and its expected balance (ITR jobs). */
+	private static final int FFR_COLUMN = 25;
+	private static final int EXPECTED_BALANCE_COLUMN = 26;
+	private static final String FFR_HEADER = "FFR Prepared";
+	private static final String EXPECTED_BALANCE_HEADER = "FFR Expected Balance";
 	private static final Pattern QUARTER_RANGE_PATTERN = Pattern.compile(
 			"(?i)Q([1-4])\\s*(\\d{4})\\s*-\\s*Q([1-4])\\s*(\\d{4})");
 
@@ -86,7 +106,9 @@ public class ClientExcel extends MainClass {
 		System.out.println("Creating this run's workbook: " + file.getAbsolutePath());
 		workbook = new HSSFWorkbook();
 		sheet = workbook.createSheet("Client Data");
-		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter", BUSINESS_STRUCTURE_HEADER, COLLATION_TYPE_HEADER};
+		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter", BUSINESS_STRUCTURE_HEADER, COLLATION_TYPE_HEADER,
+				PREFERRED_NAME_HEADER, RECIPIENT_NAME_HEADER, DUE_DATE_HEADER,
+				FINAL_INVOICE_NO_HEADER, FINAL_INVOICE_AMOUNT_HEADER, FFR_HEADER, EXPECTED_BALANCE_HEADER};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);
@@ -139,6 +161,13 @@ public class ClientExcel extends MainClass {
 				header.createCell(17).setCellValue("Financial Quarter");
 				header.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(BUSINESS_STRUCTURE_HEADER);
 				header.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_HEADER);
+				header.createCell(PREFERRED_NAME_COLUMN).setCellValue(PREFERRED_NAME_HEADER);
+				header.createCell(RECIPIENT_NAME_COLUMN).setCellValue(RECIPIENT_NAME_HEADER);
+				header.createCell(DUE_DATE_COLUMN).setCellValue(DUE_DATE_HEADER);
+				header.createCell(FINAL_INVOICE_NO_COLUMN).setCellValue(FINAL_INVOICE_NO_HEADER);
+				header.createCell(FINAL_INVOICE_AMOUNT_COLUMN).setCellValue(FINAL_INVOICE_AMOUNT_HEADER);
+				header.createCell(FFR_COLUMN).setCellValue(FFR_HEADER);
+				header.createCell(EXPECTED_BALANCE_COLUMN).setCellValue(EXPECTED_BALANCE_HEADER);
 			}
 			migrateFinancialQuarterColumn();
 			int pendingAtoRow = findPendingAtoRow();
@@ -226,6 +255,8 @@ public class ClientExcel extends MainClass {
 	 */
 	public void insertItrRow(String jobNo, String currentDate, String clientname, String clientNamexpm,
 			String clientCode, String groupName, String internalTeam, String businessStructure,
+			String preferredName, String recipientName, String dueDate,
+			String finalInvoiceNumber, String finalInvoiceAmount, boolean ffrPrepared, String expectedBalance,
 			boolean itrFileFound, String payableOrRefund, String amount) {
 		if (workbook == null || sheet == null) {
 			createEmptyExcelSheet();
@@ -254,6 +285,13 @@ public class ClientExcel extends MainClass {
 		row.createCell(17).setCellValue("");
 		row.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(businessStructure == null ? "" : businessStructure);
 		row.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_ITR);
+		row.createCell(PREFERRED_NAME_COLUMN).setCellValue(preferredName == null ? "" : preferredName);
+		row.createCell(RECIPIENT_NAME_COLUMN).setCellValue(recipientName == null ? "" : recipientName);
+		row.createCell(DUE_DATE_COLUMN).setCellValue(dueDate == null ? "" : dueDate);
+		row.createCell(FINAL_INVOICE_NO_COLUMN).setCellValue(finalInvoiceNumber == null ? "" : finalInvoiceNumber);
+		row.createCell(FINAL_INVOICE_AMOUNT_COLUMN).setCellValue(finalInvoiceAmount == null ? "" : finalInvoiceAmount);
+		row.createCell(FFR_COLUMN).setCellValue(ffrPrepared ? "Yes" : "No");
+		row.createCell(EXPECTED_BALANCE_COLUMN).setCellValue(expectedBalance == null ? "" : expectedBalance);
 
 		saveWorkbook(getTargetFile());
 	}

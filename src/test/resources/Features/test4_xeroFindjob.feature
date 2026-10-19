@@ -9,9 +9,10 @@ Feature: Collate each job
   BAS: find it in Xero, read the client and its tax returns, look the client up in the
   ATO, then write its rows and collate each period.
 
-  ITR: find 2026_ITR_ClientName in the client folder and read the estimated position
-  off it, fetch the ATO payment slip only when payable, then build the Collation
-  Testing pack and the final PDF.
+  ITR: find 2026_ITR_ClientName in the latest V Deliv folder and read the estimated
+  position and the declarant's name off it, read the tax return's due date from the
+  ATO, fetch the ATO payment slip only when payable, then build the Collation Testing
+  pack and the final PDF.
 
   Scenario Outline: Collate one job
     Given the job code is "<jobCode>"
@@ -27,6 +28,7 @@ Feature: Collate each job
     # ITR
     When the bot opens the ITR job and reads its client
     And the bot finds the ITR document in the client folder
+    And the bot reads the tax return due date from the ATO
     And the bot downloads the ATO payment slip when the ITR position is payable
     Then the bot collates the ITR pack
 

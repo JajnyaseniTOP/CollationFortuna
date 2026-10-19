@@ -7,12 +7,16 @@ import com.jj.collation.ItrCollator;
 import com.jj.collation.JobType;
 import com.jj.util.ClientExcel;
 import com.jj.util.MainClass;
+import FileExplorerCollation.filesearch.config.ItrPaths;
 import FileExplorerCollation.filesearch.document.ItrPositionReader;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
+
+import FileExplorerCollation.filesearch.document.EngagementLetterService;
 
 /**
  * The ITR (income tax return) run for one job.
@@ -31,6 +35,12 @@ public class ItrStepDefinition {
     private ItrCollator.ItrPack pack;
     private Path paymentSlip;
 
+    /** What the collation managed; null until it has run. */
+    private ItrCollator.ItrOutcome outcome;
+
+    /** The tax return's due date read from the ATO, e.g. "02/11/2026"; null if not read. */
+    private String dueDate;
+
     @When("the bot opens the ITR job and reads its client")
     public void bot_opens_the_itr_job_and_reads_its_client() throws InterruptedException {
         if (!JobType.ITR.isCurrent("ITR: open the job")) {
@@ -46,6 +56,36 @@ public class ItrStepDefinition {
             return;
         }
         pack = collator.locate(jobCode(), clientName(), FindJob.cientCode, FindJob.groupName, FindJob.internalteam);
+    }
+
+    /**
+     * Searches the client in the ATO and reads the tax return's due date from the
+     * Summary's For action list. Every ITR job needs this, payable or not, so this is
+     * where the ATO login happens for an ITR-only run.
+     */
+    @When("the bot reads the tax return due date from the ATO")
+    public void bot_reads_the_tax_return_due_date_from_the_ato() throws InterruptedException {
+        if (!JobType.ITR.isCurrent("ITR: read the due date from the ATO")) {
+            return;
+        }
+        if (pack == null) {
+            System.out.println("No ITR document was found — skipping the ATO due date.");
+            return;
+        }
+
+        ATOLoginPage atoLoginPage = new ATOLoginPage();
+        atoLoginPage.openAtoPortal();
+        atoLoginPage.login(System.getProperty("ATO_Id"));
+
+        try {
+            dueDate = atoLoginPage.readIncomeTaxDueDate(clientName(), ItrPaths.ITR_YEAR);
+        } catch (RuntimeException e) {
+            // The pack can still be built; the letter's Due Date is left blank and flagged.
+            System.out.println("!! Could not read the due date from the ATO: " + e.getMessage());
+        }
+        if (dueDate == null) {
+            System.out.println("!! No ATO due date for " + clientName() + " — the cover letter's Due Date stays blank.");
+        }
     }
 
     @When("the bot downloads the ATO payment slip when the ITR position is payable")
@@ -80,17 +120,23 @@ public class ItrStepDefinition {
         if (pack == null) {
             System.out.println("!! Nothing collated for ITR job " + jobCode() + " — its ITR document was not found.");
         } else {
-            // No Ignition link means no signed engagement through Ignition, so the letter
-            // goes in. If the Description could not be read at all, it goes in too: a
-            // spare letter is easier to spot and remove than a missing one.
-            boolean attachEngagementLetter = FindJob.ignitionLink == null;
+            // Engagement letters are off until the practice settles when one is due (scope
+            // 3.5). When switched back on: no Ignition link means the letter goes in, and so
+            // does a Description that could not be read — a spare is easier to spot than a gap.
+            boolean attachEngagementLetter = ItrPaths.ATTACH_ENGAGEMENT_LETTER && FindJob.ignitionLink == null;
             if (attachEngagementLetter) {
                 System.out.println(FindJob.descriptionRead
                         ? "No Ignition link in the job's Description — attaching the engagement letter."
                         : "!! Description not read — attaching the engagement letter to be safe. Check this job.");
             }
-            System.out.println("ITR collation for " + jobCode() + ": "
-                    + collator.collate(pack, paymentSlip, attachEngagementLetter));
+            // One name per person: a partnership's partners each get their own entity
+            // line and signature column.
+            List<String> engagementLetterNames = attachEngagementLetter
+                    ? new EngagementLetterService().namesIn(clientName(), FindJob.businessStructure)
+                    : null;
+            outcome = collator.collate(pack, paymentSlip, dueDate,
+                    FindJob.finalInvoiceNumbers, FindJob.finalInvoiceAmounts, engagementLetterNames);
+            System.out.println("ITR collation for " + jobCode() + ": " + outcome);
         }
         writeClientDataRow();
     }
@@ -101,6 +147,9 @@ public class ItrStepDefinition {
 
         new ClientExcel().insertItrRow(jobCode(), MainClass.currentDate, FindJob.clientName, FindJob.clientnamecode,
                 FindJob.cientCode, FindJob.groupName, FindJob.internalteam, FindJob.businessStructure,
+                FindJob.preferredName, pack == null ? "" : pack.recipientName, dueDate == null ? "" : dueDate,
+                FindJob.finalInvoiceNumbers, FindJob.finalInvoiceAmounts,
+                outcome != null && outcome.ffrWritten, outcome == null ? "" : outcome.expectedBalance,
                 pack != null,
                 position == null ? "" : position.isRefund() ? "Refund" : "Payable",
                 position == null || position.getAmount() == null ? "" : position.getAmount());

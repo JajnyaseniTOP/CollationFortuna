@@ -394,6 +394,135 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
 		return downloaded;
 	}
 
+	/*==================== ITR: client search by name words, tax return due date ====================*/
+
+	private static final By CLIENT_SUGGESTIONS = By.xpath(
+			"//*[@role='option' or @role='listitem' or @role='treeitem']");
+
+	/**
+	 * Opens the client in the ATO by the words of its name, in any order.
+	 *
+	 * <p>The ATO lists an individual surname first — "KIRK, JAMES" — where XPM has
+	 * "James Kirk", so the BAS search, which wants the whole name as written, would not
+	 * find them. A suggestion counts when it carries every word of the name. The name is
+	 * typed as written, then surname first, then the surname alone, until one matches.
+	 *
+	 * <p>Used by the ITR steps only.
+	 */
+	private WebDriverWait openClientByNameWords(String clientName) throws InterruptedException {
+		WebDriver driver = DriverManager.getDriver();
+
+		List<String> words = new ArrayList<>();
+		for (String word : clientName.toLowerCase().split("[^a-z0-9]+")) {
+			if (!word.isEmpty()) {
+				words.add(word);
+			}
+		}
+
+		String[] parts = clientName.replace(",", " ").trim().split("\\s+");
+		String surname = parts[parts.length - 1];
+		Set<String> attempts = new java.util.LinkedHashSet<>();
+		attempts.add(clientName.trim());
+		if (parts.length > 1 && !clientName.contains(",")) {
+			attempts.add(surname + " " + String.join(" ", java.util.Arrays.copyOf(parts, parts.length - 1)));
+			attempts.add(surname);
+		}
+
+		for (String attempt : attempts) {
+			if (driver.findElements(CLIENT_SEARCH).isEmpty()) {
+				driver.get(ATO_HOME_URL);
+			}
+			WebElement search = awaitClientSearch();
+			search.click();
+			search.clear();
+			search.sendKeys(attempt);
+			System.out.println("ATO client search: " + attempt);
+			Thread.sleep(2000);
+
+			try {
+				WebElement match = new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> {
+					for (WebElement suggestion : d.findElements(CLIENT_SUGGESTIONS)) {
+						if (!suggestion.isDisplayed()) {
+							continue;
+						}
+						String text = suggestion.getText().toLowerCase();
+						if (words.stream().allMatch(text::contains)) {
+							return suggestion;
+						}
+					}
+					return null;
+				});
+				System.out.println("Clicking ATO client suggestion: " + match.getText());
+				match.click();
+				return new WebDriverWait(driver, Duration.ofSeconds(60));
+			} catch (TimeoutException e) {
+				System.out.println("  no suggestion carrying every word of '" + clientName + "'");
+			}
+		}
+
+		DomCapture capture = new DomCapture();
+		capture.capture(driver, "ato-itr-client-not-found");
+		throw new IllegalStateException("No ATO client matching '" + clientName + "'. Page captured to: "
+				+ capture.getFolder());
+	}
+
+	/**
+	 * Reads the income tax return's due date off the client's Summary, from the
+	 * "For action" lodgments: the row whose description is the tax return —
+	 * "Jul 2025 - Jun 2026 Tax return" — and the date in its Due date column.
+	 *
+	 * <p>Where several tax returns are listed, the one ending June of the tax year wins.
+	 *
+	 * @param taxYear e.g. "2026"
+	 * @return the due date as the ATO shows it, e.g. "02/11/2026", or null if no tax
+	 *         return is listed — the page is then captured
+	 */
+	public String readIncomeTaxDueDate(String clientName, String taxYear) throws InterruptedException {
+		if (clientName == null || clientName.trim().isEmpty()) {
+			throw new IllegalArgumentException("Client name must not be empty");
+		}
+
+		WebDriver driver = DriverManager.getDriver();
+		openClientByNameWords(clientName);
+
+		String script = Dom.DEEP_TEXT
+				+ "const year=arguments[0];"
+				+ "const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
+				+ "const rows=[];"
+				+ "function collect(root){"
+				+ "for(const row of root.querySelectorAll(\"[role='row'],tr,ng-com-table-row,com-table-tr\"))rows.push(row);"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot)collect(el.shadowRoot);}"
+				+ "collect(document);"
+				// The tightest row wins: an outer wrapper can carry the whole page's text,
+				// header included, and its first date is not the tax return's.
+				+ "let best=null,bestLen=1e9,bestYear=false;"
+				+ "for(const row of rows){"
+				+ "const text=clean(deepText(row));"
+				+ "if(!/tax return/i.test(text)||text.length>400)continue;"
+				+ "const date=(text.match(/\\b\\d{2}\\/\\d{2}\\/\\d{4}\\b/)||[null])[0];"
+				+ "if(!date)continue;"
+				+ "const forYear=new RegExp('jun\\\\w*\\\\s+'+year,'i').test(text);"
+				+ "if((forYear&&!bestYear)||(forYear===bestYear&&text.length<bestLen)){"
+				+ "best=date+'|'+text;bestLen=text.length;bestYear=forYear;}}"
+				+ "return best;";
+
+		try {
+			String found = new WebDriverWait(driver, Duration.ofSeconds(30)).until(d -> {
+				Object result = ((JavascriptExecutor) d).executeScript(script, taxYear);
+				return result == null ? null : String.valueOf(result);
+			});
+			String dueDate = found.substring(0, found.indexOf('|'));
+			System.out.println("Tax return due date from the ATO: " + dueDate + "  (" + found.substring(found.indexOf('|') + 1) + ")");
+			return dueDate;
+		} catch (TimeoutException e) {
+			DomCapture capture = new DomCapture();
+			capture.capture(driver, "ato-itr-no-due-date");
+			System.out.println("!! No tax return in the client's For action list — no due date. Page captured to: "
+					+ capture.getFolder());
+			return null;
+		}
+	}
+
 	/*==================== Accounts summary -> Income tax row -> payment slip (ITR) ====================*/
 
 	private static final String[] PAYMENT_SLIP_KEYS = {"payment slip"};
@@ -418,7 +547,7 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
 		}
 
 		WebDriver driver = DriverManager.getDriver();
-		WebDriverWait atoWait = searchAndOpenClient(clientName);
+		WebDriverWait atoWait = openClientByNameWords(clientName);
 
 		try {
 			openAccountsSummary(atoWait);

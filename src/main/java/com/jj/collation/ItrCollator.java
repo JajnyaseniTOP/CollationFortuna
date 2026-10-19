@@ -2,6 +2,8 @@ package com.jj.collation;
 
 import FileExplorerCollation.filesearch.config.CollationPaths;
 import FileExplorerCollation.filesearch.config.ItrPaths;
+import FileExplorerCollation.filesearch.document.EngagementLetterService;
+import FileExplorerCollation.filesearch.document.FfrService;
 import FileExplorerCollation.filesearch.document.ItrCoverLetterService;
 import FileExplorerCollation.filesearch.document.ItrFinalPdfService;
 import FileExplorerCollation.filesearch.document.ItrPositionReader;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -24,7 +27,8 @@ import java.util.List;
  *
  * <ol>
  *   <li>{@link #locate} finds the client folder and "2026_ITR_ClientName" under
- *       year -> Year End Workpapers -> V1 Deliv -> Reports, and reads the position.</li>
+ *       year -> Year End Workpapers -> latest V Deliv -> Reports, and reads the
+ *       position and the name the return is declared in.</li>
  *   <li>{@link #collate} fills a "Collation Testing" folder inside Year End
  *       Workpapers with the ITR, the cover letter, the Notes for Persons Signing Tax
  *       Returns and - when payable - the ATO payment slip, then joins the letter,
@@ -33,7 +37,7 @@ import java.util.List;
  * </ol>
  *
  * <p>The BAS collation is {@link JobCollator}; nothing here is shared with it beyond
- * the Clients roots and the cover letter template.
+ * the Clients roots.
  */
 public class ItrCollator {
 
@@ -41,6 +45,8 @@ public class ItrCollator {
 	private final ItrPositionReader positionReader = new ItrPositionReader();
 	private final ItrCoverLetterService coverLetter = new ItrCoverLetterService();
 	private final ItrFinalPdfService finalPdf = new ItrFinalPdfService();
+	private final EngagementLetterService engagementLetterService = new EngagementLetterService();
+	private final FfrService ffrService = new FfrService();
 
 	/**
 	 * @param jobNumber e.g. "KPF019886" — decides which practice's Clients root to search
@@ -104,23 +110,42 @@ public class ItrCollator {
 					+ " — the cover letter will be written without it. Check this job.");
 		}
 
-		return new ItrPack(clientName, internalTeam, workpapers, itrFile, position);
+		// The letter is addressed to the name the return is declared in, by first name:
+		// "I, Kevin Stevens, confirm that:" -> "Kevin". The XPM name is the fallback.
+		String declarant = positionReader.readDeclarantName(itrFile);
+		String recipient = engagementLetterService.firstName(declarant != null ? declarant : clientName);
+		if (declarant == null) {
+			System.out.println("!! No declaration name in " + itrFile.getFileName()
+					+ " — addressing the letter to '" + recipient + "' from the XPM name. Check this job.");
+		}
+
+		ItrPack pack = new ItrPack(clientName, internalTeam, workpapers, itrFile, position, recipient);
+		pack.bankAccounts.addAll(positionReader.readBankAccounts(itrFile));
+		String financialYear = positionReader.readFinancialYear(itrFile);
+		pack.financialYear = financialYear != null ? financialYear : year;
+		System.out.println("  bank accounts on the return: " + pack.bankAccounts.size()
+				+ (pack.isFfr() ? "  (one is Fortuna's, refund paid via the trust account: FFR)" : ""));
+		return pack;
 	}
 
 	/**
 	 * @param paymentSlip the ATO payment slip, or null when the position is a refund
 	 *                    (or the slip could not be downloaded)
 	 */
-	public ItrOutcome collate(ItrPack pack, Path paymentSlip) {
-		return collate(pack, paymentSlip, false);
+	public ItrOutcome collate(ItrPack pack, Path paymentSlip, String dueDate) {
+		return collate(pack, paymentSlip, dueDate, "", "", null);
 	}
 
 	/**
-	 * @param attachEngagementLetter true when the job's Description has no Ignition
-	 *                               link — the client has not signed up through
-	 *                               Ignition, so the engagement letter goes in the pack
+	 * @param dueDate               the tax return due date read from the ATO, e.g.
+	 *                              "02/11/2026"; blank when it could not be read
+	 * @param finalInvoiceNumber    the job's final invoice, from its Financial tab, for the FFR
+	 * @param finalInvoiceAmount    its amount
+	 * @param engagementLetterNames the people or entities to fill the engagement
+	 *                              letter in for; null when no letter is needed
 	 */
-	public ItrOutcome collate(ItrPack pack, Path paymentSlip, boolean attachEngagementLetter) {
+	public ItrOutcome collate(ItrPack pack, Path paymentSlip, String dueDate, String finalInvoiceNumber,
+			String finalInvoiceAmount, List<String> engagementLetterNames) {
 
 		ItrOutcome outcome = new ItrOutcome();
 
@@ -145,14 +170,26 @@ public class ItrCollator {
 			System.out.println("!! Position is payable but no ATO payment slip was saved — collating without it.");
 		}
 
-		if (attachEngagementLetter) {
-			outcome.engagementLetterCopied = copyInto(
-					Paths.get(ItrPaths.ENGAGEMENT_LETTER_FOLDER, ItrPaths.ENGAGEMENT_LETTER_FILE),
-					collationFolder, ItrPaths.ENGAGEMENT_LETTER_FILE) != null;
+		if (engagementLetterNames != null) {
+			Path engagementLetter = copyInto(
+					Paths.get(ItrPaths.ITR_LETTERS_FOLDER, ItrPaths.ENGAGEMENT_LETTER_FILE),
+					collationFolder, ItrPaths.ENGAGEMENT_LETTER_FILE);
+			outcome.engagementLetterCopied = engagementLetter != null
+					&& engagementLetterService.fill(engagementLetter, engagementLetterNames, LocalDate.now());
 		}
 
-		Path letter = coverLetter.createCoverLetter(collationFolder, pack.clientName,
-				pack.position == null ? "" : pack.position.describe(), payable);
+		// Scope 3.6: a refund paid into Fortuna's trust account gets the Fee From Refund authority.
+		// Made before the letter, which lists it as an enclosure only once it exists.
+		if (pack.isFfr()) {
+			Path ffr = ffrService.createFfr(collationFolder, pack.financialYear, pack.recipientName,
+					pack.position.getAmount(), finalInvoiceNumber, finalInvoiceAmount, pack.clientAccount());
+			outcome.ffrWritten = ffr != null;
+			outcome.expectedBalance = ffrService.expectedBalance(pack.position.getAmount(), finalInvoiceAmount);
+		}
+
+		Path letter = coverLetter.createCoverLetter(collationFolder, pack.recipientName, pack.clientName,
+				pack.position == null ? "" : pack.position.describe(), dueDate == null ? "" : dueDate,
+				outcome.ffrWritten);
 		outcome.coverLetterWritten = letter != null;
 
 		Path notes = copyInto(Paths.get(ItrPaths.ITR_TEMPLATE_FOLDER, ItrPaths.NOTES_FOR_SIGNING_FILE),
@@ -206,7 +243,32 @@ public class ItrCollator {
 		/** Null when the ITR document did not give up its estimated position. */
 		public final ItrPosition position;
 
-		ItrPack(String clientName, String internalTeam, Path workpapersFolder, Path itrFile, ItrPosition position) {
+		/** First name the cover letter is addressed to, e.g. "Kevin". */
+		public final String recipientName;
+
+		/** Every bank account printed in the return, in order. */
+		public final List<ItrPositionReader.BankAccount> bankAccounts = new java.util.ArrayList<>();
+
+		/** The return's financial year, e.g. "2026". */
+		public String financialYear;
+
+		/**
+		 * Scope 3.6: an FFR is prepared only for a refund paid into Fortuna's account,
+		 * i.e. a Fortuna account under Account Name in the return.
+		 */
+		public boolean isFfr() {
+			return position != null && position.isRefund()
+					&& bankAccounts.stream().anyMatch(ItrPositionReader.BankAccount::isFortuna);
+		}
+
+		/** The client's own account: the first one on the return that is not Fortuna's. */
+		public ItrPositionReader.BankAccount clientAccount() {
+			return bankAccounts.stream().filter(a -> !a.isFortuna()).findFirst().orElse(null);
+		}
+
+		ItrPack(String clientName, String internalTeam, Path workpapersFolder, Path itrFile, ItrPosition position,
+				String recipientName) {
+			this.recipientName = recipientName;
 			this.clientName = clientName;
 			this.internalTeam = internalTeam;
 			this.workpapersFolder = workpapersFolder;
@@ -228,6 +290,10 @@ public class ItrCollator {
 		public boolean paymentSlipCopied;
 		public boolean finalPdfBuilt;
 		public boolean engagementLetterCopied;
+		public boolean ffrWritten;
+
+		/** Refund minus final invoice, as on the FFR; blank when there is no FFR or no invoice. */
+		public String expectedBalance = "";
 
 		@Override
 		public String toString() {
@@ -236,6 +302,7 @@ public class ItrCollator {
 					+ ", signing notes " + (notesCopied ? "copied" : "NOT copied")
 					+ ", ATO payment slip " + (paymentSlipCopied ? "copied" : "not included")
 					+ ", engagement letter " + (engagementLetterCopied ? "copied" : "not included")
+					+ ", FFR " + (ffrWritten ? "written" : "not needed")
 					+ ", final PDF " + (finalPdfBuilt ? "built" : "NOT built");
 		}
 	}
