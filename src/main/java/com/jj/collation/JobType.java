@@ -11,10 +11,34 @@ import java.util.regex.Pattern;
  */
 public enum JobType {
 
+	/** BAS; ITR is an income tax return for an individual. */
 	BAS, ITR,
+
+	/**
+	 * An income tax return for a company, partnership or any client that is neither an
+	 * individual nor a trust. Each has its own collation process, none built yet, so the
+	 * job is stopped rather than sent through another one.
+	 */
+	ITR_NOT_INDIVIDUAL,
+
+	/** An income tax return for a trust: the trust and the entities of its group (scope 4). */
+	ITR_TRUST,
 
 	/** Neither, or both — the job is left alone rather than collated the wrong way. */
 	UNKNOWN;
+
+	/**
+	 * The client's XPM Business Structure decides which ITR process applies:
+	 * "Individual" or a trust so far.
+	 */
+	public static boolean isIndividual(String businessStructure) {
+		return businessStructure != null && businessStructure.trim().equalsIgnoreCase("Individual");
+	}
+
+	/** "Trust", "Family Trust", "Discretionary Trust"... - the Trust ITR process. */
+	public static boolean isTrust(String businessStructure) {
+		return businessStructure != null && businessStructure.toLowerCase().matches(".*\\btrust\\b.*");
+	}
 
 	/** "Income Tax Return", or ITR as a word of its own. */
 	private static final Pattern ITR_NAME = Pattern.compile("(?i)income\\s+tax\\s+return|\\bITR\\b");
@@ -58,6 +82,12 @@ public enum JobType {
 	}
 
 	private static String describe(JobType type) {
-		return type == UNKNOWN ? "neither a BAS nor an ITR job" : (type == ITR ? "an ITR" : "a BAS") + " job";
+		switch (type) {
+			case UNKNOWN:            return "neither a BAS nor an ITR job";
+			case ITR_NOT_INDIVIDUAL: return "an ITR for a client that is neither an Individual nor a Trust (not handled yet)";
+			case ITR_TRUST:          return "a Trust ITR job";
+			case ITR:                return "an individual ITR job";
+			default:                 return "a BAS job";
+		}
 	}
 }

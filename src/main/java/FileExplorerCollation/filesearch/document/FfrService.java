@@ -49,6 +49,29 @@ public class FfrService {
      */
     public Path createFfr(Path collationFolder, String financialYear, String recipientName, String refundAmount,
             String finalInvoiceNumber, String finalInvoiceAmount, ItrPositionReader.BankAccount clientAccount) {
+        return createFfr(collationFolder, FFR_FILE_NAME, financialYear, recipientName, refundAmount,
+                finalInvoiceNumber, finalInvoiceAmount, clientAccount);
+    }
+
+    /**
+     * As above, under a given file name — a Trust job can have one FFR per entity,
+     * e.g. "Fee From Refund 2026 - John Brunton.docx".
+     */
+    public Path createFfr(Path collationFolder, String fileName, String financialYear, String recipientName,
+            String refundAmount, String finalInvoiceNumber, String finalInvoiceAmount,
+            ItrPositionReader.BankAccount clientAccount) {
+        return createFfr(collationFolder, fileName, financialYear, recipientName, refundAmount,
+                finalInvoiceNumber, finalInvoiceAmount, clientAccount, true);
+    }
+
+    /**
+     * @param withInvoice false to leave the second table (Client Name, Invoice Number,
+     *                    Amount) and the Expected Balance Amount untouched - the Trust
+     *                    FFR fills the first table only for now (scope 4.5.2 is on hold)
+     */
+    public Path createFfr(Path collationFolder, String fileName, String financialYear, String recipientName,
+            String refundAmount, String finalInvoiceNumber, String finalInvoiceAmount,
+            ItrPositionReader.BankAccount clientAccount, boolean withInvoice) {
 
         Path template = Paths.get(ItrPaths.ITR_LETTERS_FOLDER, ItrPaths.FFR_TEMPLATE_FILE);
 
@@ -57,14 +80,16 @@ public class FfrService {
             return null;
         }
 
-        Path ffr = collationFolder.resolve(FFR_FILE_NAME);
+        Path ffr = collationFolder.resolve(fileName);
 
         Double refund = money(refundAmount);
         Double invoice = money(finalInvoiceAmount);
         String balance = refund != null && invoice != null ? format(refund - invoice) : "";
         String refundText = refund == null ? nullToEmpty(refundAmount) : format(refund);
 
-        if (balance.isEmpty()) {
+        if (!withInvoice) {
+            balance = "";
+        } else if (balance.isEmpty()) {
             System.out.println("!! FFR: no final invoice amount — Expected Balance Amount left blank. Check this job.");
         }
         if (clientAccount == null) {
@@ -94,7 +119,7 @@ public class FfrService {
                         setValue(paragraph, clientAccount == null ? "" : clientAccount.bsb);
                     } else if (text.startsWith("A/C")) {
                         setValue(paragraph, clientAccount == null ? "" : clientAccount.number);
-                    } else if (text.startsWith("EXPECTED BALANCE AMOUNT")) {
+                    } else if (withInvoice && text.startsWith("EXPECTED BALANCE AMOUNT")) {
                         setValue(paragraph, balance);
                     }
                 }
@@ -112,7 +137,7 @@ public class FfrService {
                                 setCellText(table.getRow(r).getCell(1), refundText);
                             }
                         }
-                    } else if (headings.contains("INVOICE NUMBER")) {
+                    } else if (withInvoice && headings.contains("INVOICE NUMBER")) {
                         setCellText(table.getRow(1).getCell(0), recipientName);
                         setCellText(table.getRow(1).getCell(1), nullToEmpty(finalInvoiceNumber));
                         setCellText(table.getRow(1).getCell(2),

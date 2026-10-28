@@ -80,14 +80,23 @@ public final class ClientDataColumns {
     /** AA - ITR jobs: the FFR's expected balance, refund minus final invoice. */
     public static final int FFR_EXPECTED_BALANCE = 26;
 
-    /** AB - written by this project: whether the client folder was located. */
-    public static final int CLIENT_FOLDER_STATUS = 27;
+    /**
+     * AB to AG - Trust ITR jobs, one row per entity: Entities Included, Entity,
+     * Financial Statement, Directors, Ignition Job, Engagement Letter (see ClientExcel).
+     */
+    public static final int ENTITIES_INCLUDED = 27;
+
+    /**
+     * AO - written by the legacy folder search: whether the client folder was located.
+     * Kept well clear of the columns the collation writes.
+     */
+    public static final int CLIENT_FOLDER_STATUS = 40;
 
     /** Header text written above {@link #CLIENT_FOLDER_STATUS}. */
     public static final String CLIENT_FOLDER_STATUS_HEADER = "Client Folder Status";
 
-    /** AC - written by this project: whether the AS file was located. */
-    public static final int AS_FILE_STATUS = 28;
+    /** AP - written by the legacy folder search: whether the AS file was located. */
+    public static final int AS_FILE_STATUS = 41;
 
     /** Header text written above {@link #AS_FILE_STATUS}. */
     public static final String AS_FILE_STATUS_HEADER = "AS File Status";

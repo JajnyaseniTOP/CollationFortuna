@@ -48,6 +48,25 @@ public class ItrStepDefinition {
         }
         new FindJob();
         FindJob.openItrJob(jobCode());
+
+        // The ITR process differs for an individual, a company, a trust and a group, and
+        // only the individual one exists. Anything else stops here, but still gets its
+        // row in ClientData so the sheet shows what was left and why.
+        if (JobType.isTrust(FindJob.businessStructure)) {
+            System.out.println(">>> " + jobCode() + " is a Trust ITR (Business Structure '"
+                    + FindJob.businessStructure + "') — the Trust collation steps take over.");
+            JobType.setCurrent(JobType.ITR_TRUST);
+        } else if (!JobType.isIndividual(FindJob.businessStructure)) {
+            System.out.println("!! " + jobCode() + " is an ITR for a client whose Business Structure is '"
+                    + FindJob.businessStructure + "', neither 'Individual' nor a Trust. Only those two ITR"
+                    + " collations exist — not collated.");
+            JobType.setCurrent(JobType.ITR_NOT_INDIVIDUAL);
+            new ClientExcel().insertItrRow(jobCode(), MainClass.currentDate, FindJob.clientName,
+                    FindJob.clientnamecode, FindJob.cientCode, FindJob.groupName, FindJob.internalteam,
+                    FindJob.businessStructure, FindJob.preferredName, "", "",
+                    FindJob.finalInvoiceNumbers, FindJob.finalInvoiceAmounts, false, "",
+                    false, "", "", "ITR - not Individual, not collated");
+        }
     }
 
     @When("the bot finds the ITR document in the client folder")
@@ -76,6 +95,11 @@ public class ItrStepDefinition {
         ATOLoginPage atoLoginPage = new ATOLoginPage();
         atoLoginPage.openAtoPortal();
         atoLoginPage.login(System.getProperty("ATO_Id"));
+        if (!atoLoginPage.isLoggedIn()) {
+            System.out.println("!! The ATO login was not completed — no due date for " + clientName()
+                    + ". It is left blank on the cover letter.");
+            return;
+        }
 
         try {
             dueDate = atoLoginPage.readIncomeTaxDueDate(clientName(), ItrPaths.ITR_YEAR);
@@ -107,6 +131,10 @@ public class ItrStepDefinition {
         ATOLoginPage atoLoginPage = new ATOLoginPage();
         atoLoginPage.openAtoPortal();
         atoLoginPage.login(System.getProperty("ATO_Id"));
+        if (!atoLoginPage.isLoggedIn()) {
+            System.out.println("!! The ATO login was not completed — no payment slip for " + clientName() + ".");
+            return;
+        }
 
         String downloaded = atoLoginPage.downloadIncomeTaxPaymentSlip(clientName());
         paymentSlip = downloaded == null ? null : Paths.get(DriverManager.getDownloadDirectory(), downloaded);

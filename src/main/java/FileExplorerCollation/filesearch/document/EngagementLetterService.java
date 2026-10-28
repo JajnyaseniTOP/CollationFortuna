@@ -151,6 +151,87 @@ public class EngagementLetterService {
         }
     }
 
+    /**
+     * Fills in the engagement letter for a Trust job (scope 4.4):
+     *
+     * <pre>
+     *   Dear << >>,                                   -> Dear John and Jessica,  (the cover letter recipients)
+     *   Entity 1 .. Entity 4                          -> every entity in Entities Included
+     *   Signature on behalf of the "Client":          -> Signature on behalf of the "Brunton Family Trust":
+     *   <<Insert Client Name >>                       -> the individual entities
+     *   <<... additional Person/ Director >>          -> the directors from the financial statement
+     *   Date:                                         -> Date: today
+     * </pre>
+     *
+     * @param recipients  first names, as on the cover letter
+     * @param entities    every entity of the job, trust first
+     * @param clientName  the trust the collation is for
+     * @param individuals the individual entities
+     * @param directors   the directors from the financial statement; may be empty
+     */
+    public boolean fillForTrust(Path letter, List<String> recipients, List<String> entities, String clientName,
+            List<String> individuals, List<String> directors, LocalDate date) {
+
+        try {
+
+            XWPFDocument document;
+            try (FileInputStream fis = new FileInputStream(letter.toFile())) {
+                document = new XWPFDocument(fis);
+            }
+
+            try {
+
+                for (XWPFParagraph paragraph : document.getParagraphs()) {
+                    String text = paragraph.getText() == null ? "" : paragraph.getText().trim();
+                    if (text.startsWith("Dear") && text.contains("<<")) {
+                        setParagraphText(paragraph, "Dear " + joinNames(recipients) + ",");
+                    } else if (text.startsWith("Signature on behalf of the")) {
+                        setParagraphText(paragraph, text.replaceAll("[“\"]Client[”\"]",
+                                "“" + clientName + "”"));
+                    }
+                }
+
+                fillEntities(document, entities);
+
+                String dateText = "Date: " + date.format(DATE_FORMAT);
+
+                for (XWPFTable table : document.getTables()) {
+                    if (!table.getText().contains(CLIENT_NAME_PLACEHOLDER)) {
+                        continue;
+                    }
+                    for (XWPFTableRow row : table.getRows()) {
+                        List<XWPFTableCell> cells = row.getTableCells();
+                        for (int c = 0; c < cells.size(); c++) {
+                            String text = cells.get(c).getText();
+                            if (text.contains("additional Person")) {
+                                setCellText(cells.get(c), joinNames(directors));
+                            } else if (text.contains(CLIENT_NAME_PLACEHOLDER)) {
+                                setCellText(cells.get(c), joinNames(individuals));
+                            } else if (text.trim().startsWith("Date")) {
+                                setCellText(cells.get(c), dateText);
+                            }
+                        }
+                    }
+                }
+
+                try (FileOutputStream fos = new FileOutputStream(letter.toFile())) {
+                    document.write(fos);
+                }
+
+            } finally {
+                document.close();
+            }
+
+            System.out.println("YES - Trust engagement letter filled in: Dear " + joinNames(recipients)
+                    + " | entities " + entities + " | directors " + directors);
+            return true;
+
+        } catch (IOException e) {
+            System.out.println("ERROR - Unable to fill in the Trust engagement letter: " + e.getMessage());
+            return false;
+        }
+    }
+
     /** "Dear <<  >>," -> "Dear Kevin," or, for two partners, "Dear Kevin and Jane,". */
     private void fillGreeting(XWPFDocument document, List<String> names) {
 

@@ -42,6 +42,14 @@ public final class ItrPaths {
     /** The Fee From Refund authority, in the ITR Letters folder (scope 3.6). */
     public static final String FFR_TEMPLATE_FILE = "Fee From Refund (new authority).docx";
 
+    /* ---- Trust ITR collation (scope 4) - templates in the ITR Letters folder ---- */
+
+    /** The Trust cover letter template. */
+    public static final String TRUST_COVER_LETTER_TEMPLATE = "Cover Letter " + ITR_YEAR + " for Trust.docx";
+
+    /** The AGM minute, copied unchanged into every Trust pack for now (scope 4.7). */
+    public static final String TRUST_AGM_TEMPLATE = "AGM Minute -  Trust.docx";
+
     /** What the finished ITR letter is called, e.g. "Cover Letter 2026.docx". */
     public static final String COVER_LETTER_FILE_NAME = "Cover Letter " + ITR_YEAR + ".docx";
 

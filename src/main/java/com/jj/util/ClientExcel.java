@@ -71,6 +71,27 @@ public class ClientExcel extends MainClass {
 	private static final int EXPECTED_BALANCE_COLUMN = 26;
 	private static final String FFR_HEADER = "FFR Prepared";
 	private static final String EXPECTED_BALANCE_HEADER = "FFR Expected Balance";
+
+	/*
+	 * Columns AB to AG: Trust ITR jobs (scope 4), one row per entity. Every value the
+	 * Trust cover letter is built from has its own column.
+	 */
+	public static final int ENTITIES_INCLUDED_COLUMN = 27;
+	public static final int ENTITY_COLUMN = 28;
+	public static final int FINANCIAL_STATEMENT_COLUMN = 29;
+	public static final int DIRECTORS_COLUMN = 30;
+	public static final int IGNITION_COLUMN = 31;
+	public static final int ENGAGEMENT_LETTER_COLUMN = 32;
+	private static final String[] TRUST_HEADERS = {
+			"Entities Included", "Entity", "Financial Statement", "Directors", "Ignition Job", "Engagement Letter"};
+
+	/** Columns written by {@link #insertCells} for Trust rows, alongside the ones above. */
+	public static final int COVER_LETTER_NOTES_COLUMN = 2;
+	public static final int JOB_NO_COLUMN = 0;
+	public static final int DATE_COLUMN = 3;
+	public static final int STATUS_COLUMN = 14;
+	public static final int PAYABLE_REFUND_COLUMN = 15;
+	public static final int AMOUNT_COLUMN = 16;
 	private static final Pattern QUARTER_RANGE_PATTERN = Pattern.compile(
 			"(?i)Q([1-4])\\s*(\\d{4})\\s*-\\s*Q([1-4])\\s*(\\d{4})");
 
@@ -108,7 +129,8 @@ public class ClientExcel extends MainClass {
 		sheet = workbook.createSheet("Client Data");
 		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter", BUSINESS_STRUCTURE_HEADER, COLLATION_TYPE_HEADER,
 				PREFERRED_NAME_HEADER, RECIPIENT_NAME_HEADER, DUE_DATE_HEADER,
-				FINAL_INVOICE_NO_HEADER, FINAL_INVOICE_AMOUNT_HEADER, FFR_HEADER, EXPECTED_BALANCE_HEADER};
+				FINAL_INVOICE_NO_HEADER, FINAL_INVOICE_AMOUNT_HEADER, FFR_HEADER, EXPECTED_BALANCE_HEADER,
+				TRUST_HEADERS[0], TRUST_HEADERS[1], TRUST_HEADERS[2], TRUST_HEADERS[3], TRUST_HEADERS[4], TRUST_HEADERS[5]};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);
@@ -168,6 +190,9 @@ public class ClientExcel extends MainClass {
 				header.createCell(FINAL_INVOICE_AMOUNT_COLUMN).setCellValue(FINAL_INVOICE_AMOUNT_HEADER);
 				header.createCell(FFR_COLUMN).setCellValue(FFR_HEADER);
 				header.createCell(EXPECTED_BALANCE_COLUMN).setCellValue(EXPECTED_BALANCE_HEADER);
+				for (int i = 0; i < TRUST_HEADERS.length; i++) {
+					header.createCell(ENTITIES_INCLUDED_COLUMN + i).setCellValue(TRUST_HEADERS[i]);
+				}
 			}
 			migrateFinancialQuarterColumn();
 			int pendingAtoRow = findPendingAtoRow();
@@ -246,6 +271,46 @@ public class ClientExcel extends MainClass {
 	}
 
 	/**
+	 * Writes one row from column numbers to values - used for the Trust jobs, which
+	 * write a row per entity. Columns not given stay blank; the combined folder-name
+	 * columns are filled from the client columns as on every other row.
+	 */
+	public void insertCells(Map<Integer, String> cells) {
+		if (workbook == null || sheet == null) {
+			createEmptyExcelSheet();
+		}
+
+		Row row = sheet.getRow(currentRowNum);
+		if (row == null) {
+			row = sheet.createRow(currentRowNum);
+		}
+		currentRowNum++;
+
+		for (Map.Entry<Integer, String> cell : cells.entrySet()) {
+			row.createCell(cell.getKey()).setCellValue(cell.getValue() == null ? "" : cell.getValue());
+		}
+		createCombinedColumns(row);
+
+		saveWorkbook(getTargetFile());
+	}
+
+	/** Column numbers of the client details every row carries, for {@link #insertCells}. */
+	public static final int CLIENT_NAME_COLUMN = 4;
+	public static final int CLIENT_NAME_XPM_COLUMN = 5;
+	public static final int CLIENT_CODE_COLUMN = 6;
+	public static final int GROUP_COLUMN = 7;
+	public static final int TEAM_COLUMN = 8;
+	public static final int BUSINESS_STRUCTURE = 18;
+	public static final int COLLATION_TYPE = 19;
+	public static final int PREFERRED_NAME = 20;
+	public static final int RECIPIENT = 21;
+	public static final int DUE_DATE = 22;
+	public static final int FINAL_INVOICE_NO = 23;
+	public static final int FINAL_INVOICE_AMOUNT = 24;
+	public static final int FFR_PREPARED = 25;
+	public static final int FFR_EXPECTED_BALANCE = 26;
+
+	/**
 	 * Writes the one row an ITR job gets, marked "ITR" in the Collation Type column.
 	 *
 	 * <p>The columns line up with the BAS rows so the sheet reads the same way for
@@ -258,6 +323,20 @@ public class ClientExcel extends MainClass {
 			String preferredName, String recipientName, String dueDate,
 			String finalInvoiceNumber, String finalInvoiceAmount, boolean ffrPrepared, String expectedBalance,
 			boolean itrFileFound, String payableOrRefund, String amount) {
+		insertItrRow(jobNo, currentDate, clientname, clientNamexpm, clientCode, groupName, internalTeam,
+				businessStructure, preferredName, recipientName, dueDate, finalInvoiceNumber, finalInvoiceAmount,
+				ffrPrepared, expectedBalance, itrFileFound, payableOrRefund, amount, COLLATION_TYPE_ITR);
+	}
+
+	/**
+	 * As above, with the Collation Type spelled out — e.g. "ITR - not Individual, not
+	 * collated" for a company or trust return the individual process must not handle.
+	 */
+	public void insertItrRow(String jobNo, String currentDate, String clientname, String clientNamexpm,
+			String clientCode, String groupName, String internalTeam, String businessStructure,
+			String preferredName, String recipientName, String dueDate,
+			String finalInvoiceNumber, String finalInvoiceAmount, boolean ffrPrepared, String expectedBalance,
+			boolean itrFileFound, String payableOrRefund, String amount, String collationType) {
 		if (workbook == null || sheet == null) {
 			createEmptyExcelSheet();
 		}
@@ -284,7 +363,7 @@ public class ClientExcel extends MainClass {
 		row.createCell(16).setCellValue(amount == null || amount.isEmpty() ? "Not Found" : amount);
 		row.createCell(17).setCellValue("");
 		row.createCell(BUSINESS_STRUCTURE_COLUMN).setCellValue(businessStructure == null ? "" : businessStructure);
-		row.createCell(COLLATION_TYPE_COLUMN).setCellValue(COLLATION_TYPE_ITR);
+		row.createCell(COLLATION_TYPE_COLUMN).setCellValue(collationType);
 		row.createCell(PREFERRED_NAME_COLUMN).setCellValue(preferredName == null ? "" : preferredName);
 		row.createCell(RECIPIENT_NAME_COLUMN).setCellValue(recipientName == null ? "" : recipientName);
 		row.createCell(DUE_DATE_COLUMN).setCellValue(dueDate == null ? "" : dueDate);

@@ -104,6 +104,12 @@ public class ItrFolderSearch {
         return null;
     }
 
+    /** True when two names are the same person or entity, whatever the word order or punctuation. */
+    public boolean sameName(String first, String second) {
+        String a = nameKey(first);
+        return !a.isEmpty() && a.equals(nameKey(second));
+    }
+
     /**
      * Reduces a client or folder name to its words in a fixed order, so the same
      * name compares equal however it is written:
@@ -231,17 +237,35 @@ public class ItrFolderSearch {
      * settle it, nothing is returned rather than a guess.
      */
     public Path findItrFile(Path reportsFolder, String year, String clientName) {
+        return findReturnFile(reportsFolder, year, clientName, ItrPaths.ITR_FILE_MARKER);
+    }
 
-        String prefix = compact(year + ItrPaths.ITR_FILE_MARKER);
+    /**
+     * Finds a tax return in the Reports folder by year and return type: "2026_ITR_Name",
+     * "2026 ITR - Name", or for a trust "2026 TRT - Brunton Family Trust".
+     *
+     * @param markers the return types accepted, e.g. "ITR", "TRT"
+     */
+    public Path findReturnFile(Path reportsFolder, String year, String clientName, String... markers) {
 
         List<Path> candidates = new ArrayList<>();
+        java.util.Map<Path, Integer> prefixLength = new java.util.HashMap<>();
 
         try (var files = Files.list(reportsFolder)) {
 
             for (Path file : (Iterable<Path>) files::iterator) {
 
-                if (Files.isRegularFile(file) && compact(baseName(file)).startsWith(prefix)) {
-                    candidates.add(file);
+                if (!Files.isRegularFile(file)) {
+                    continue;
+                }
+
+                for (String marker : markers) {
+                    String prefix = compact(year + marker);
+                    if (compact(baseName(file)).startsWith(prefix)) {
+                        candidates.add(file);
+                        prefixLength.put(file, prefix.length());
+                        break;
+                    }
                 }
             }
 
@@ -250,13 +274,15 @@ public class ItrFolderSearch {
             return null;
         }
 
+        String wanted = year + " " + String.join("/", markers);
+
         if (candidates.isEmpty()) {
-            System.out.println("NO - no " + year + "_" + ItrPaths.ITR_FILE_MARKER + "_ file in " + reportsFolder);
+            System.out.println("NO - no " + wanted + " file in " + reportsFolder);
             return null;
         }
 
         if (candidates.size() == 1) {
-            System.out.println("YES - ITR file found: " + candidates.get(0).getFileName());
+            System.out.println("YES - " + wanted + " file found: " + candidates.get(0).getFileName());
             return candidates.get(0);
         }
 
@@ -268,7 +294,7 @@ public class ItrFolderSearch {
 
         for (Path candidate : candidates) {
 
-            String filedName = compact(baseName(candidate)).substring(prefix.length());
+            String filedName = compact(baseName(candidate)).substring(prefixLength.get(candidate));
 
             if (filedName.isEmpty()) {
                 continue;
@@ -281,12 +307,41 @@ public class ItrFolderSearch {
         }
 
         if (named.size() == 1) {
-            System.out.println("YES - ITR file found: " + named.get(0).getFileName());
+            System.out.println("YES - " + wanted + " file found: " + named.get(0).getFileName());
             return named.get(0);
         }
 
-        System.out.println("Ambiguous ITR file for '" + clientName + "' - leaving it alone rather than guessing between "
-                + candidates);
+        System.out.println("Ambiguous " + wanted + " file for '" + clientName
+                + "' - leaving it alone rather than guessing between " + candidates);
+        return null;
+    }
+
+    /**
+     * The first file in a folder whose name carries the given words, ignoring case and
+     * punctuation - e.g. "financial statement" matches "2026 Financial Statements -
+     * Brunton Family Trust.pdf", and "group tax summary" matches "Group tax Summary  -
+     * Brunton Group.pdf".
+     */
+    public Path findFileContaining(Path folder, String words) {
+
+        if (folder == null) {
+            return null;
+        }
+
+        String wanted = compact(words);
+
+        try (var files = Files.list(folder)) {
+
+            for (Path file : (Iterable<Path>) files::iterator) {
+                if (Files.isRegularFile(file) && compact(file.getFileName().toString()).contains(wanted)) {
+                    return file;
+                }
+            }
+
+        } catch (IOException e) {
+            System.out.println("ERROR - Unable to list " + folder);
+        }
+
         return null;
     }
 

@@ -180,11 +180,11 @@ public class ItrCollator {
 
 		// Scope 3.6: a refund paid into Fortuna's trust account gets the Fee From Refund authority.
 		// Made before the letter, which lists it as an enclosure only once it exists.
+		// First table only: the invoice table and the expected balance are no longer prepared.
 		if (pack.isFfr()) {
-			Path ffr = ffrService.createFfr(collationFolder, pack.financialYear, pack.recipientName,
-					pack.position.getAmount(), finalInvoiceNumber, finalInvoiceAmount, pack.clientAccount());
+			Path ffr = ffrService.createFfr(collationFolder, FfrService.FFR_FILE_NAME, pack.financialYear,
+					pack.recipientName, pack.position.getAmount(), "", "", pack.clientAccount(), false);
 			outcome.ffrWritten = ffr != null;
-			outcome.expectedBalance = ffrService.expectedBalance(pack.position.getAmount(), finalInvoiceAmount);
 		}
 
 		Path letter = coverLetter.createCoverLetter(collationFolder, pack.recipientName, pack.clientName,

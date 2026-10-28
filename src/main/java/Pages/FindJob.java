@@ -432,7 +432,12 @@ public class FindJob extends MainClass {
 	 * link class, so a build-generated class name cannot break it.
 	 */
 	public static void clickjoblinks(String jobnumber) throws InterruptedException {
-		clickWithJs(searchJobList(jobnumber));
+		try {
+			clickWithJs(searchJobList(jobnumber));
+		} catch (TimeoutException notInJobList) {
+			// Closed jobs are not in Job manager's list; the search at the top right finds them.
+			openJobFromGlobalSearch(jobnumber);
+		}
 
 		// Wait for the job page to paint. Reading the fields on a half-loaded page is
 		// what made Job No., Cover Letter Notes and Client all come back empty.
@@ -491,7 +496,17 @@ public class FindJob extends MainClass {
 			switchportal2();
 		}
 
-		WebElement jobLink = searchJobList(input);
+		WebElement jobLink;
+		try {
+			jobLink = searchJobList(input);
+		} catch (TimeoutException notInJobList) {
+			// A closed job is not in Job manager's list: open it from the top-right search
+			// and read the name off the job page instead - the same text as the Name column.
+			openJobFromGlobalSearch(input);
+			String name = extractText(Job_Name, "Job Name", "");
+			System.out.println(">>> " + input + " job name (from the job page): " + name);
+			return name;
+		}
 
 		String script =
 				"const clean=v=>(v||'').replace(/\\s+/g,' ').trim();"
@@ -514,6 +529,215 @@ public class FindJob extends MainClass {
 		}
 		System.out.println(">>> " + input + " job name: " + name);
 		return name;
+	}
+
+	/** True when the page in front is this job's own page, its Job no. showing the job number. */
+	private static boolean isJobPageOpen(String jobnumber) {
+		try {
+			if (!driver.getCurrentUrl().contains("jobview.aspx") || driver.findElements(JOB_PAGE_READY).isEmpty()) {
+				return false;
+			}
+			return jobnumber != null && jobnumber.trim().equalsIgnoreCase(jobNo.getText().trim());
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	/*====================Closed jobs: the search at the top right===================================*/
+
+	/** The magnifier in the top navigation's tools. */
+	private static final By GLOBAL_SEARCH_BUTTON = By.id("x-nav--global-tool-button-global-tools-search");
+
+
+	/**
+	 * Opens a job through Xero's own search - the magnifier at the right of the top
+	 * navigation - for jobs Job manager's list does not show, such as closed jobs.
+	 *
+	 * <p>Used only after the Job manager search has come up empty; that search is
+	 * unchanged. The navigation is read through shadow roots, so the magnifier is found
+	 * by its label ("Search") and its place on the right of the header rather than by a
+	 * class name, and the result is the first visible item carrying the job number.
+	 */
+	private static void openJobFromGlobalSearch(String jobnumber) throws InterruptedException {
+		System.out.println(jobnumber + " is not in Job manager's list (closed job?) — trying the search at the top right.");
+
+		String findSearchButton = Dom.DEEP_TEXT
+				+ "const clean=v=>(v||'').toLowerCase();"
+				+ "let found=null;"
+				+ "function walk(root){"
+				+ "if(found)return;"
+				+ "for(const el of root.querySelectorAll(\"button,a,[role='button']\")){"
+				+ "const r=el.getBoundingClientRect();"
+				+ "if(r.width===0||r.top>140||r.left<window.innerWidth/2)continue;"
+				+ "const label=clean(el.getAttribute('aria-label'))+' '+clean(el.getAttribute('title'))+' '+clean(el.getAttribute('data-automationid'))+' '+clean(deepText(el));"
+				+ "if(label.includes('search')){found=el;return;}}"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot){walk(el.shadowRoot);if(found)return;}}"
+				+ "walk(document);return found;";
+
+		// The magnifier has a fixed id; the label search is the fallback
+		WebElement searchButton;
+		try {
+			searchButton = new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> {
+				List<WebElement> byId = d.findElements(GLOBAL_SEARCH_BUTTON);
+				return !byId.isEmpty() ? byId.get(0)
+						: (WebElement) ((JavascriptExecutor) d).executeScript(findSearchButton);
+			});
+		} catch (TimeoutException e) {
+			throw globalSearchFailure("no search button at the top right", jobnumber);
+		}
+		clickWithJs(searchButton);
+		Thread.sleep(1500);
+
+		// The search box in the Search panel on the right. It is drawn inside a shadow root, and
+		// Job manager's own search box sits at the same height on the left, so only an input in
+		// the right-hand part of the screen counts.
+		String findInput =
+				"let found=null;"
+				+ "function walk(root){"
+				+ "if(found)return;"
+				+ "for(const i of root.querySelectorAll(\"input[type='search'],input[type='text'],input:not([type])\")){"
+				+ "const r=i.getBoundingClientRect();"
+				+ "if(r.width>0&&r.height>0&&r.left>window.innerWidth*0.6){found=i;return;}}"
+				+ "for(const e of root.querySelectorAll('*'))if(e.shadowRoot){walk(e.shadowRoot);if(found)return;}}"
+				+ "walk(document);return found;";
+
+		// The search box in the Search panel that opens on the right
+		WebElement input = null;
+		try {
+			input = new WebDriverWait(driver, Duration.ofSeconds(5))
+					.until(d -> (WebElement) ((JavascriptExecutor) d).executeScript(findInput));
+		} catch (TimeoutException e) {
+			// The panel is drawn in its own embedded frame, out of reach of the page's
+			// lookups - but it opens with the cursor already in its search box.
+		}
+
+		// Clear the box first - a box that keeps its last value turned the number into
+		// "KPF014528KPF014528" - then type the job number once and press Enter.
+		org.openqa.selenium.Keys selectAll = org.openqa.selenium.Keys.CONTROL;
+		if (input != null) {
+			input.click();
+			input.sendKeys(org.openqa.selenium.Keys.chord(selectAll, "a"), org.openqa.selenium.Keys.DELETE);
+			input.sendKeys(jobnumber, org.openqa.selenium.Keys.ENTER);
+			System.out.println("Top-right search for: " + input.getAttribute("value"));
+		} else {
+			new org.openqa.selenium.interactions.Actions(driver)
+					.keyDown(selectAll).sendKeys("a").keyUp(selectAll).sendKeys(org.openqa.selenium.Keys.DELETE)
+					.sendKeys(jobnumber).sendKeys(org.openqa.selenium.Keys.ENTER)
+					.perform();
+			System.out.println("Top-right search for: " + jobnumber + " (typed into the panel's focused search box)");
+		}
+		Thread.sleep(3000);
+
+		// The first visible result carrying the job number
+		String findResult = Dom.DEEP_TEXT
+				+ "const want=arguments[0].toLowerCase();"
+				+ "let found=null;"
+				+ "function walk(root){"
+				+ "if(found)return;"
+				+ "for(const el of root.querySelectorAll(\"a,button,[role='option'],[role='link'],[role='menuitem'],li\")){"
+				+ "if(el.tagName==='INPUT')continue;"
+				+ "const r=el.getBoundingClientRect();"
+				+ "if(r.width===0||r.height===0||r.left<window.innerWidth*0.6)continue;"
+				+ "if((deepText(el)||'').toLowerCase().includes(want)){found=el;return;}}"
+				+ "for(const el of root.querySelectorAll('*'))if(el.shadowRoot){walk(el.shadowRoot);if(found)return;}}"
+				+ "walk(document);return found;";
+
+		// The job link in the results: a link in the Search panel carrying the job number first
+		By panelLink = By.xpath("//aside[@id='wac-right-panel']//a[contains(normalize-space(), "
+				+ xpathLiteral(jobnumber) + ")]");
+		Set<String> windowsBefore = new HashSet<>(driver.getWindowHandles());
+
+		WebElement result = null;
+		try {
+			result = new WebDriverWait(driver, Duration.ofSeconds(10)).until(d -> {
+				for (WebElement link : d.findElements(panelLink)) {
+					if (link.isDisplayed()) {
+						return link;
+					}
+				}
+				return (WebElement) ((JavascriptExecutor) d).executeScript(findResult, jobnumber);
+			});
+		} catch (TimeoutException e) {
+			// Not on the page itself: look in the panel's embedded frame
+		}
+
+		if (result != null) {
+			System.out.println("Clicking search result: " + deepTextOf(result));
+			clickWithJs(result);
+		} else if (!clickJobLinkInFrames(jobnumber)) {
+			throw globalSearchFailure("no search result for the job number", jobnumber);
+		}
+		Thread.sleep(2000);
+
+		Set<String> opened = new HashSet<>(driver.getWindowHandles());
+		opened.removeAll(windowsBefore);
+		if (!opened.isEmpty()) {
+			driver.switchTo().window(opened.iterator().next());
+		}
+
+		awaitJobDetail();
+		System.out.println("Job open (from the top-right search) at: " + driver.getCurrentUrl());
+	}
+
+	/**
+	 * Clicks the job link inside the Search panel's embedded frame: the blue job number
+	 * at the top of the results ("KPF014528 / 2025 Accounts - Brunton Group").
+	 *
+	 * <p>Every frame on the page is tried, those inside shadow roots included, for up to
+	 * 20 seconds while the results load. The driver is always returned to the page.
+	 *
+	 * @return true once the link has been clicked
+	 */
+	private static boolean clickJobLinkInFrames(String jobnumber) throws InterruptedException {
+		String collectFrames =
+				"const out=[];"
+				+ "function walk(root){"
+				+ "for(const f of root.querySelectorAll('iframe,frame'))out.push(f);"
+				+ "for(const e of root.querySelectorAll('*'))if(e.shadowRoot)walk(e.shadowRoot);}"
+				+ "walk(document);return out;";
+		By link = By.xpath("//a[contains(normalize-space(), " + xpathLiteral(jobnumber) + ")]"
+				+ " | //*[@role='link' or @role='option' or self::button][contains(normalize-space(), "
+				+ xpathLiteral(jobnumber) + ")]");
+
+		long deadline = System.currentTimeMillis() + 20000;
+		while (System.currentTimeMillis() < deadline) {
+			@SuppressWarnings("unchecked")
+			List<WebElement> frames = (List<WebElement>) ((JavascriptExecutor) driver).executeScript(collectFrames);
+			for (WebElement frame : frames) {
+				try {
+					driver.switchTo().frame(frame);
+					for (WebElement candidate : driver.findElements(link)) {
+						if (candidate.isDisplayed()) {
+							System.out.println("Clicking search result (in the panel's frame): " + candidate.getText());
+							candidate.click();
+							driver.switchTo().defaultContent();
+							return true;
+						}
+					}
+				} catch (Exception e) {
+					// A frame that went away or cannot be entered: try the next one
+				} finally {
+					driver.switchTo().defaultContent();
+				}
+			}
+			Thread.sleep(1000);
+		}
+		return false;
+	}
+
+	/** Saves the page and builds the error, naming the step of the top-right search that failed. */
+	private static IllegalStateException globalSearchFailure(String what, String jobnumber) {
+		DomCapture capture = new DomCapture();
+		capture.capture(driver, "global-search-" + jobnumber);
+		// The panel's results do not all show in the saved page, so keep a picture of the screen too
+		try {
+			byte[] png = ((org.openqa.selenium.TakesScreenshot) driver).getScreenshotAs(org.openqa.selenium.OutputType.BYTES);
+			java.nio.file.Files.write(capture.getFolder().resolve("global-search-" + jobnumber + ".png"), png);
+		} catch (Exception e) {
+			System.out.println("  could not save a screenshot: " + e.getMessage());
+		}
+		return new IllegalStateException("Could not open " + jobnumber + " from the top-right search: " + what
+				+ ". Page captured to: " + capture.getFolder());
 	}
 
 	private static void extractClientDetailsInJobPage() throws InterruptedException {
@@ -1234,6 +1458,46 @@ public class FindJob extends MainClass {
 		awaitJobDetail();
 	}
 
+	/** The job's "Entities Included" (Admin section), one entity per line as XPM shows it. */
+	public static String entitiesIncluded = "";
+
+	/** The job's "Client order no.", e.g. "PROP-21652" for a job that came through Ignition. */
+	public static String clientOrderNo = "";
+
+	/** A job came through Ignition when its Client order no. is a proposal number: PROP-something. */
+	public static boolean isIgnitionJob() {
+		return clientOrderNo != null && clientOrderNo.trim().toUpperCase().matches("PROP-\\S+");
+	}
+
+	/**
+	 * A labelled field on the job page, in either layout, keeping its line breaks.
+	 * The label is matched ignoring case and a trailing colon, so "Client order no."
+	 * also finds the legacy "Client Order No.:".
+	 *
+	 * @return the value, or blank when the field is missing or shows "-"
+	 */
+	private static String readJobField(String label) {
+		String script =
+				"const want=arguments[0].toLowerCase().replace(/:$/,'');"
+				+ "const clean=v=>(v||'').replace(/\\u00a0/g,' ').trim();"
+				+ "for(const el of document.querySelectorAll('span,td,div,label,dt,th')){"
+				+ "if(el.children.length>1)continue;"
+				+ "const t=clean(el.textContent).toLowerCase().replace(/:$/,'');"
+				+ "if(t!==want)continue;"
+				+ "const value=el.nextElementSibling||(el.parentElement&&el.parentElement.nextElementSibling);"
+				+ "if(!value)continue;"
+				+ "const v=clean(value.innerText);"
+				+ "return v==='-'?'':v;}"
+				+ "return '';";
+		try {
+			Object value = ((JavascriptExecutor) driver).executeScript(script, label);
+			return value == null ? "" : String.valueOf(value).trim();
+		} catch (Exception e) {
+			System.out.println("Unable to read " + label + ": " + e.getMessage());
+			return "";
+		}
+	}
+
 	/** The client's Preferred Name on XPM; blank when the field is empty ("-") or missing. */
 	public static String preferredName = "";
 
@@ -1306,18 +1570,24 @@ public class FindJob extends MainClass {
 	public static void openItrJob(String input) throws InterruptedException {
 		focusXeroWindow();
 
-		driver.get(PRACTICE_MANAGER_HOME);
-		new WebDriverWait(driver, Duration.ofSeconds(30)).until(
-				d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
-		System.out.println("Practice Manager ready at: " + driver.getCurrentUrl());
-
-		if (input != null && input.toUpperCase(Locale.ENGLISH).startsWith("KPF")) {
-			switchportal();
+		// The job is often already open: a closed job is opened from the top-right search
+		// to read its name, and searching for it a second time would only repeat that.
+		if (isJobPageOpen(input)) {
+			System.out.println(input + " is already open — carrying on from its job page.");
 		} else {
-			switchportal2();
-		}
+			driver.get(PRACTICE_MANAGER_HOME);
+			new WebDriverWait(driver, Duration.ofSeconds(30)).until(
+					d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
+			System.out.println("Practice Manager ready at: " + driver.getCurrentUrl());
 
-		clickjoblinks(input);
+			if (input != null && input.toUpperCase(Locale.ENGLISH).startsWith("KPF")) {
+				switchportal();
+			} else {
+				switchportal2();
+			}
+
+			clickjoblinks(input);
+		}
 
 		readIgnitionLink();
 
@@ -1325,6 +1595,14 @@ public class FindJob extends MainClass {
 		clientName     = extractText(Client_Name, "Client Name", "No cleintName");
 		jobName        = extractText(Job_Name, "Job Name", "");
 		System.out.println(">>> ITR job: " + extractedJobNo + " - " + jobName);
+
+		// Trust jobs (scope 4.1, 4.4): the notes for the cover letter, the entities the job
+		// covers, and the Client order no. that shows whether it came through Ignition.
+		coverLetterNotes = readJobField("Cover Letter Notes");
+		entitiesIncluded = readJobField("Entities Included");
+		clientOrderNo    = readJobField("Client order no.");
+		System.out.println(">>> Entities Included: '" + entitiesIncluded.replace("\n", " | ") + "'");
+		System.out.println(">>> Client order no.: '" + clientOrderNo + "'" + (isIgnitionJob() ? "  (Ignition job)" : ""));
 
 		// Cleared so a field the client page does not show cannot carry over from the
 		// job before this one.

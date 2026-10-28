@@ -39,7 +39,10 @@ public class ATOLoginPage extends MainClass {
 	private static final String DEFAULT_EMAIL = "shravika.arora@fortunaadvisors.com.au";
 
 	/** How long the run holds for the myID prompt to be approved on the device. */
-	private static final Duration MYID_APPROVAL_WINDOW = Duration.ofSeconds(180);
+	private static final Duration MYID_APPROVAL_WINDOW = Duration.ofSeconds(300);
+
+	/** myID's own "Login timeout" box, shown when the code is not confirmed in the app in time. */
+	private static final By MYID_TRY_AGAIN = By.id("tryAgainButton");
 
 	private static final By CONTINUE_WITH_DIGITAL_ID = By.xpath(
 			"//*[self::button or self::a or self::span][contains(normalize-space(), 'Continue with Digital ID')]");
@@ -163,7 +166,12 @@ public class ATOLoginPage extends MainClass {
 			// way through, so keep nudging the flow rather than assuming one sequence
 			// of clicks got us all the way to the prompt.
 			try {
-				if (hasElement(SELECT_MY_ID)) {
+				// myID gave up waiting for the code: start it again rather than sit on the timeout box
+				List<WebElement> tryAgain = driver.findElements(MYID_TRY_AGAIN);
+				if (!tryAgain.isEmpty() && tryAgain.get(0).isDisplayed()) {
+					System.out.println("  myID login timed out — pressing Try again. Watch the browser for the new code.");
+					tryAgain.get(0).click();
+				} else if (hasElement(SELECT_MY_ID)) {
 					clickOnSelectmyIDButton();
 				} else if (hasElement(CONTINUE_WITH_DIGITAL_ID)) {
 					clickOnMyGOVButton();
@@ -203,6 +211,17 @@ public class ATOLoginPage extends MainClass {
 	 * sight — not just on the home page. Each job leaves the tab on whatever ATO page
 	 * it finished with, and all of those are equally signed in.
 	 */
+	/** The ATO's own "Error | Australian Taxation Office" page. */
+	private boolean isAtoErrorPage() {
+		WebDriver driver = DriverManager.getDriver();
+		return driver.getCurrentUrl().contains("/ErrorPage") || String.valueOf(driver.getTitle()).startsWith("Error");
+	}
+
+	/** True once the ATO portal is signed in — the steps after the login check this before using it. */
+	public boolean isLoggedIn() {
+		return isAlreadyAuthenticated();
+	}
+
 	private boolean isAlreadyAuthenticated() {
 		String url = DriverManager.getDriver().getCurrentUrl();
 		boolean insideOnlineServices = url.contains("onlineservices.ato.gov.au/OnlineServices");
@@ -483,7 +502,37 @@ public String findWithholdingRegistration(String clientName) throws InterruptedE
 		}
 
 		WebDriver driver = DriverManager.getDriver();
-		openClientByNameWords(clientName);
+
+		// The ATO sometimes answers a client with its own Error page, after which its search
+		// finds nothing at all - "No matches found" even for a client it found a minute ago.
+		// A fresh start from the agent home clears it, so a client gets a second attempt
+		// after an Error page. A client the search simply does not find is not one of the
+		// practice's ATO clients, and is not searched for again.
+		boolean errorPageSeen = false;
+		for (int attempt = 1; ; attempt++) {
+			try {
+				openClientByNameWords(clientName);
+				Thread.sleep(3000);
+				if (!isAtoErrorPage()) {
+					break;
+				}
+				errorPageSeen = true;
+				System.out.println("  the ATO showed its Error page for " + clientName + " (attempt " + attempt + ")");
+			} catch (IllegalStateException e) {
+				if (!errorPageSeen) {
+					System.out.println("!! " + clientName + " is not found as an ATO client of the practice — no due date.");
+					return null;
+				}
+				System.out.println("  " + e.getMessage().split("\\.")[0] + " (attempt " + attempt + ")");
+			}
+			if (attempt == 2) {
+				System.out.println("!! The ATO did not open " + clientName + " after a fresh start — no due date.");
+				return null;
+			}
+			System.out.println("  starting again from the ATO home page.");
+			driver.get(ATO_HOME_URL);
+			Thread.sleep(3000);
+		}
 
 		String script = Dom.DEEP_TEXT
 				+ "const year=arguments[0];"

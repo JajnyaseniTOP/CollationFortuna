@@ -60,8 +60,9 @@ public class ItrCoverLetterService {
 
                 String name = file.getFileName().toString().toLowerCase();
 
+                // The Trust letter ("Cover Letter 2026 for Trust.docx") sits in the same folder
                 if (Files.isRegularFile(file) && name.endsWith(".docx") && name.contains("cover letter")
-                        && !name.startsWith("~$")) {
+                        && !name.contains("trust") && !name.startsWith("~$")) {
                     return file;
                 }
             }

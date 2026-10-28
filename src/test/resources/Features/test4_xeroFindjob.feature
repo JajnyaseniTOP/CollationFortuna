@@ -32,8 +32,15 @@ Feature: Collate each job
     And the bot downloads the ATO payment slip when the ITR position is payable
     Then the bot collates the ITR pack
 
+    # ITR - Trust (the client's Business Structure is a trust)
+    When the bot finds the trust entities' documents in the client folders
+    And the bot reads the trust entities' due dates from the ATO
+    Then the bot collates the trust pack
+
     Examples:
       | jobCode   |
       | KPF019886 |
       | KPF018802 |
       | KPF019526 |
+      | KPF019368 |
+      | KPF014528 |
