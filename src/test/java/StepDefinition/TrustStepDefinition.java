@@ -35,6 +35,30 @@ public class TrustStepDefinition {
                 FindJob.internalteam, FindJob.entitiesIncluded);
     }
 
+    /**
+     * For each AGM minute the job needs (scope 4.7), the company is looked up in Xero with
+     * the search at the top right, for its ACN and its address.
+     */
+    @When("the bot reads the AGM companies' details from Xero")
+    public void bot_reads_the_agm_companies_details_from_xero() {
+        if (!JobType.ITR_TRUST.isCurrent("Trust: read the AGM companies from Xero")) {
+            return;
+        }
+        if (pack == null || pack.agmMinutes.isEmpty()) {
+            System.out.println("No AGM minutes for this job — nothing to look up in Xero.");
+            return;
+        }
+        for (TrustCollator.AgmPlan plan : pack.agmMinutes) {
+            FindJob.CompanyDetails details = FindJob.readCompanyFromXero(plan.company);
+            if (details != null && !details.acn.isEmpty() && !details.address.isEmpty()) {
+                plan.acn = details.acn;
+                plan.address = details.address;
+            } else {
+                System.out.println("!! " + plan.company + ": no ACN or address in Xero — its AGM minute is skipped.");
+            }
+        }
+    }
+
     /** The trust's own position and due date are NIL; every other entity's due date comes from the ATO. */
     @When("the bot reads the trust entities' due dates from the ATO")
     public void bot_reads_the_trust_entities_due_dates() throws InterruptedException {
@@ -113,7 +137,7 @@ public class TrustStepDefinition {
         cells.put(ClientExcel.GROUP_COLUMN, FindJob.groupName);
         cells.put(ClientExcel.TEAM_COLUMN, FindJob.internalteam);
         cells.put(ClientExcel.BUSINESS_STRUCTURE, FindJob.businessStructure);
-        cells.put(ClientExcel.COLLATION_TYPE, "ITR - Trust");
+        cells.put(ClientExcel.COLLATION_TYPE, "ITR - " + FindJob.businessStructure);
         cells.put(ClientExcel.PREFERRED_NAME, FindJob.preferredName);
         cells.put(ClientExcel.FINAL_INVOICE_NO, FindJob.finalInvoiceNumbers);
         cells.put(ClientExcel.FINAL_INVOICE_AMOUNT, FindJob.finalInvoiceAmounts);
@@ -121,6 +145,12 @@ public class TrustStepDefinition {
         cells.put(ClientExcel.IGNITION_COLUMN, FindJob.isIgnitionJob() ? "Yes (" + FindJob.clientOrderNo + ")" : "No");
 
         if (pack != null) {
+            cells.put(ClientExcel.PARENT_ENTITY_COLUMN, pack.mainEntity == null ? "" : pack.mainEntity.name);
+            List<String> agm = new ArrayList<>();
+            for (TrustCollator.AgmPlan plan : pack.agmMinutes) {
+                agm.add(plan.company + (plan.acn == null ? " (not prepared)" : " ACN " + plan.acn));
+            }
+            cells.put(ClientExcel.AGM_MINUTES_COLUMN, String.join("; ", agm));
             cells.put(ClientExcel.RECIPIENT, String.join(", ", pack.recipients));
             cells.put(ClientExcel.FINANCIAL_STATEMENT_COLUMN, pack.financialStatement == null ? "Not Found"
                     : pack.financialStatement.getFileName().toString());

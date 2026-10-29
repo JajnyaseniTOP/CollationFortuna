@@ -26,6 +26,38 @@ public class FinancialStatementReader {
 
     private static final Pattern DIRECTOR = Pattern.compile("(?i)^\\s*(?:Director|Trustee)\\s*:\\s*(.+?)\\s*$");
 
+    /** "The director(s) of Grass Tree Landscaping and Reticulation Pty Ltd declare that ..." */
+    private static final Pattern TRUSTEE_COMPANY = Pattern.compile(
+            "(?i)directors?(?:\\(s\\))?\\s+of\\s+(.+?\\b(?:Pty\\.?\\s*Ltd\\.?|Limited|Ltd\\.?))(?=\\s|$)");
+
+    /**
+     * The trust's corporate trustee, from the Trustee Declaration: the company whose
+     * directors make the declaration (scope 4.7, condition 1).
+     *
+     * @return the company name, or null when the trustee is not a company
+     */
+    public String readTrusteeCompany(Path financialStatement) {
+
+        try (PDDocument document = PDDocument.load(financialStatement.toFile())) {
+
+            String text = new PDFTextStripper().getText(document).replace(' ', ' ').replaceAll("\\s+", " ");
+            int declaration = text.toLowerCase().indexOf("trustee declaration");
+            Matcher company = TRUSTEE_COMPANY.matcher(declaration >= 0 ? text.substring(declaration) : text);
+
+            if (company.find()) {
+                String name = company.group(1).trim();
+                System.out.println("Corporate trustee in " + financialStatement.getFileName() + ": " + name);
+                return name;
+            }
+
+        } catch (IOException e) {
+            System.out.println("ERROR - Unable to read " + financialStatement + ": " + e.getMessage());
+        }
+
+        System.out.println("No corporate trustee in " + financialStatement.getFileName());
+        return null;
+    }
+
     /**
      * @return the directors' names in the order printed, each once; empty when the
      *         statements carry no Director lines

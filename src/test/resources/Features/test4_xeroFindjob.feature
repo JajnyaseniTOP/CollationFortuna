@@ -34,6 +34,7 @@ Feature: Collate each job
 
     # ITR - Trust (the client's Business Structure is a trust)
     When the bot finds the trust entities' documents in the client folders
+    And the bot reads the AGM companies' details from Xero
     And the bot reads the trust entities' due dates from the ATO
     Then the bot collates the trust pack
 

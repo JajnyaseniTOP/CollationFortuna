@@ -52,20 +52,22 @@ public class ItrStepDefinition {
         // The ITR process differs for an individual, a company, a trust and a group, and
         // only the individual one exists. Anything else stops here, but still gets its
         // row in ClientData so the sheet shows what was left and why.
-        if (JobType.isTrust(FindJob.businessStructure)) {
-            System.out.println(">>> " + jobCode() + " is a Trust ITR (Business Structure '"
-                    + FindJob.businessStructure + "') — the Trust collation steps take over.");
-            JobType.setCurrent(JobType.ITR_TRUST);
-        } else if (!JobType.isIndividual(FindJob.businessStructure)) {
-            System.out.println("!! " + jobCode() + " is an ITR for a client whose Business Structure is '"
-                    + FindJob.businessStructure + "', neither 'Individual' nor a Trust. Only those two ITR"
-                    + " collations exist — not collated.");
+        // "Individual" has its own process (this class). Every other Business Structure - Trust,
+        // Group, Partnership, Spouse, Company - goes through the Trust scope, whose steps take over.
+        // A structure that could not be read is not guessed at.
+        if (JobType.isUnreadable(FindJob.businessStructure)) {
+            System.out.println("!! " + jobCode() + ": the client's Business Structure could not be read from XPM"
+                    + " — not collated rather than guessing Individual or not.");
             JobType.setCurrent(JobType.ITR_NOT_INDIVIDUAL);
             new ClientExcel().insertItrRow(jobCode(), MainClass.currentDate, FindJob.clientName,
                     FindJob.clientnamecode, FindJob.cientCode, FindJob.groupName, FindJob.internalteam,
                     FindJob.businessStructure, FindJob.preferredName, "", "",
                     FindJob.finalInvoiceNumbers, FindJob.finalInvoiceAmounts, false, "",
-                    false, "", "", "ITR - not Individual, not collated");
+                    false, "", "", "ITR - Business Structure unknown, not collated");
+        } else if (!JobType.isIndividual(FindJob.businessStructure)) {
+            System.out.println(">>> " + jobCode() + " is an ITR for a '" + FindJob.businessStructure
+                    + "' client — the Trust scope steps take over.");
+            JobType.setCurrent(JobType.ITR_TRUST);
         }
     }
 

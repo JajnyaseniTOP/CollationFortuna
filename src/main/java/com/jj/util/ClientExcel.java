@@ -82,8 +82,13 @@ public class ClientExcel extends MainClass {
 	public static final int DIRECTORS_COLUMN = 30;
 	public static final int IGNITION_COLUMN = 31;
 	public static final int ENGAGEMENT_LETTER_COLUMN = 32;
+	/** AH: the hyperlinked client on the job page, whose folder holds Collation Testing. */
+	public static final int PARENT_ENTITY_COLUMN = 33;
+	/** AI: the AGM minutes prepared, company and ACN. */
+	public static final int AGM_MINUTES_COLUMN = 34;
 	private static final String[] TRUST_HEADERS = {
-			"Entities Included", "Entity", "Financial Statement", "Directors", "Ignition Job", "Engagement Letter"};
+			"Entities Included", "Entity", "Financial Statement", "Directors", "Ignition Job", "Engagement Letter",
+			"Parent Entity", "AGM Minutes"};
 
 	/** Columns written by {@link #insertCells} for Trust rows, alongside the ones above. */
 	public static final int COVER_LETTER_NOTES_COLUMN = 2;
@@ -130,7 +135,8 @@ public class ClientExcel extends MainClass {
 		String[] headers = {"Job No", "ATO quarter", "Cover Letter Notes", "Date","Client Name","Client Name_xpm","Client code","Client Group Name","Internal team Name","Group+TeamName","Client+code+TeamName","ClientName+TeamName","ReversedNameforCol_10","Quarters", "Status", "Payble/Refund", "Amount", "Financial Quarter", BUSINESS_STRUCTURE_HEADER, COLLATION_TYPE_HEADER,
 				PREFERRED_NAME_HEADER, RECIPIENT_NAME_HEADER, DUE_DATE_HEADER,
 				FINAL_INVOICE_NO_HEADER, FINAL_INVOICE_AMOUNT_HEADER, FFR_HEADER, EXPECTED_BALANCE_HEADER,
-				TRUST_HEADERS[0], TRUST_HEADERS[1], TRUST_HEADERS[2], TRUST_HEADERS[3], TRUST_HEADERS[4], TRUST_HEADERS[5]};
+				TRUST_HEADERS[0], TRUST_HEADERS[1], TRUST_HEADERS[2], TRUST_HEADERS[3], TRUST_HEADERS[4], TRUST_HEADERS[5],
+				TRUST_HEADERS[6], TRUST_HEADERS[7]};
 		Row headerRow = sheet.createRow(0);
 		for (int i = 0; i < headers.length; i++) {
 			Cell cell = headerRow.createCell(i);

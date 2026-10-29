@@ -560,7 +560,17 @@ public class FindJob extends MainClass {
 	 */
 	private static void openJobFromGlobalSearch(String jobnumber) throws InterruptedException {
 		System.out.println(jobnumber + " is not in Job manager's list (closed job?) — trying the search at the top right.");
+		clickGlobalSearchResult(jobnumber);
+		awaitJobDetail();
+		System.out.println("Job open (from the top-right search) at: " + driver.getCurrentUrl());
+	}
 
+	/**
+	 * The magnifier search itself: opens the Search panel, types the text once, presses
+	 * Enter and clicks the first result carrying it (case ignored). Leaves the browser on
+	 * whatever page the result opens - a job or a client.
+	 */
+	private static void clickGlobalSearchResult(String jobnumber) throws InterruptedException {
 		String findSearchButton = Dom.DEEP_TEXT
 				+ "const clean=v=>(v||'').toLowerCase();"
 				+ "let found=null;"
@@ -674,9 +684,6 @@ public class FindJob extends MainClass {
 		if (!opened.isEmpty()) {
 			driver.switchTo().window(opened.iterator().next());
 		}
-
-		awaitJobDetail();
-		System.out.println("Job open (from the top-right search) at: " + driver.getCurrentUrl());
 	}
 
 	/**
@@ -695,9 +702,12 @@ public class FindJob extends MainClass {
 				+ "for(const f of root.querySelectorAll('iframe,frame'))out.push(f);"
 				+ "for(const e of root.querySelectorAll('*'))if(e.shadowRoot)walk(e.shadowRoot);}"
 				+ "walk(document);return out;";
-		By link = By.xpath("//a[contains(normalize-space(), " + xpathLiteral(jobnumber) + ")]"
-				+ " | //*[@role='link' or @role='option' or self::button][contains(normalize-space(), "
-				+ xpathLiteral(jobnumber) + ")]");
+		// Case ignored: a company is written "Grass Tree Landscaping Pty Ltd" in one place and
+		// "GRASS TREE LANDSCAPING PTY LTD" in another
+		String lower = "translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')";
+		String wanted = xpathLiteral(jobnumber.toLowerCase(Locale.ENGLISH));
+		By link = By.xpath("//a[contains(" + lower + ", " + wanted + ")]"
+				+ " | //*[@role='link' or @role='option' or self::button][contains(" + lower + ", " + wanted + ")]");
 
 		long deadline = System.currentTimeMillis() + 20000;
 		while (System.currentTimeMillis() < deadline) {
@@ -723,6 +733,88 @@ public class FindJob extends MainClass {
 			Thread.sleep(1000);
 		}
 		return false;
+	}
+
+	/*====================Trust AGM minutes: a company's ACN and address===================================*/
+
+	/** A company's details from its XPM client page, for an AGM minute. */
+	public static final class CompanyDetails {
+		public final String name;
+		/** "143 646 339"; from the ABN without its first two digits when XPM has no ACN. */
+		public final String acn;
+		/** The street address under Contact details, e.g. "14 Contour Rd, ROLEYSTONE, WA, 6111, Australia". */
+		public final String address;
+
+		CompanyDetails(String name, String acn, String address) {
+			this.name = name;
+			this.acn = acn;
+			this.address = address;
+		}
+	}
+
+	/**
+	 * Finds a company in Xero with the search at the top right and reads its ACN and
+	 * address off its client page (scope 4.7). If the search opens one of the company's
+	 * jobs instead, the client is opened from the job.
+	 *
+	 * <p>The ACN is the client page's ACN field; when XPM shows none, the ABN without its
+	 * first two digits, which is the same number. The address is the client's street (or
+	 * else first) address under Contact details on the right.
+	 *
+	 * @return the details, or null when the company could not be opened in Xero
+	 */
+	public static CompanyDetails readCompanyFromXero(String companyName) {
+		try {
+			focusXeroWindow();
+			driver.get(PRACTICE_MANAGER_HOME);
+			new WebDriverWait(driver, Duration.ofSeconds(30)).until(
+					d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
+
+			System.out.println("Looking up " + companyName + " in Xero for its AGM minute.");
+			clickGlobalSearchResult(companyName);
+			Thread.sleep(3000);
+
+			if (driver.getCurrentUrl().contains("jobview.aspx")) {
+				clickOnClientName();
+			}
+
+			WebDriverWait pageWait = new WebDriverWait(driver, Duration.ofSeconds(30));
+			pageWait.until(d -> !d.findElements(By.xpath(
+					"//div[@data-automationid='information-item-abn--value' or @data-automationid='information-item-acn--value']")).isEmpty());
+			Thread.sleep(1000);
+
+			String acn = digitsOf(textOf(By.xpath("//div[@data-automationid='information-item-acn--value']")));
+			if (acn.length() != 9) {
+				String abn = digitsOf(textOf(By.xpath("//div[@data-automationid='information-item-abn--value']")));
+				acn = abn.length() == 11 ? abn.substring(2) : "";
+				System.out.println("  no ACN in XPM — taken from the ABN: " + acn);
+			}
+			if (acn.length() == 9) {
+				acn = acn.substring(0, 3) + " " + acn.substring(3, 6) + " " + acn.substring(6);
+			}
+
+			String address = textOf(By.xpath(
+					"//div[@data-automationid='client-details--client-sidebar-address--Street address']"));
+			if (address.isEmpty()) {
+				address = textOf(By.xpath("//div[starts-with(@data-automationid,'client-details--client-sidebar-address')]"));
+			}
+
+			System.out.println("  " + companyName + ": ACN '" + acn + "', address '" + address + "'");
+			return new CompanyDetails(companyName, acn, address);
+
+		} catch (Exception e) {
+			System.out.println("!! Could not read " + companyName + " from Xero: " + e.getMessage());
+			return null;
+		}
+	}
+
+	private static String textOf(By locator) {
+		List<WebElement> found = driver.findElements(locator);
+		return found.isEmpty() ? "" : found.get(0).getText().replace("Copy to clipboard", "").trim();
+	}
+
+	private static String digitsOf(String text) {
+		return text == null ? "" : text.replaceAll("\\D", "");
 	}
 
 	/** Saves the page and builds the error, naming the step of the top-right search that failed. */
